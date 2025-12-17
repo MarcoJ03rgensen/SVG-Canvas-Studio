@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canvas Studio Ultimate</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* Custom Scrollbar for Inspector */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9; 
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        /* Hide scrollbar for color picker row */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import { 
+            MousePointer2, Square, Circle, Type, Minus, Image as ImageIcon,
+            Download, Layers, ZoomIn, ZoomOut, 
+            Trash2, Copy, Play, Pause, Grid, 
+            Upload, Lock, Unlock, Check, X,
+            ArrowRight, Sparkles, Move, Menu, ChevronUp, ChevronDown,
+            Clock, Plus, Wand2, AlignLeft
+        } from 'https://esm.sh/lucide-react@0.263.1';
+
+        const { useState, useRef, useEffect } = React;
+
+        // --- Assets & Constants ---
+
+        const COLORS = {
+            Gray: ['#f8fafc', '#e2e8f0', '#94a3b8', '#475569', '#1e293b', '#0f172a'],
+            Red: ['#fef2f2', '#fecaca', '#f87171', '#dc2626', '#991b1b', '#450a0a'],
+            Orange: ['#fff7ed', '#fed7aa', '#fb923c', '#ea580c', '#9a3412', '#431407'],
+            Amber: ['#fffbeb', '#fde68a', '#fbbf24', '#d97706', '#92400e', '#451a03'],
+            Green: ['#f0fdf4', '#bbf7d0', '#4ade80', '#16a34a', '#166534', '#052e16'],
+            Teal: ['#f0fdfa', '#99f6e4', '#2dd4bf', '#0d9488', '#115e59', '#042f2e'],
+            Blue: ['#eff6ff', '#bfdbfe', '#60a5fa', '#2563eb', '#1e40af', '#172554'],
+            Indigo: ['#eef2ff', '#c7d2fe', '#818cf8', '#4f46e5', '#3730a3', '#312e81'],
+            Purple: ['#faf5ff', '#e9d5ff', '#c084fc', '#9333ea', '#6b21a8', '#3b0764'],
+            Pink: ['#fdf2f8', '#fbcfe8', '#f472b6', '#db2777', '#9d174d', '#500724'],
+        };
+
+        const ANIMATION_PRESETS = [
+            { id: 'move', label: 'Custom Move', category: 'Motion', css: 'animation: move-{id}-{idx} {t} normal both;' },
+            { id: 'fade', label: 'Fade In', category: 'Entrance', css: 'opacity: 0; animation: fadeIn {t} normal both;' },
+            { id: 'scale', label: 'Pop In', category: 'Entrance', css: 'transform: scale(0); animation: scaleIn {t} normal both;' },
+            { id: 'slideUp', label: 'Slide Up', category: 'Entrance', css: 'transform: translateY(50px); opacity: 0; animation: slideUp {t} normal both;' },
+            { id: 'slideDown', label: 'Slide Down', category: 'Entrance', css: 'transform: translateY(-50px); opacity: 0; animation: slideDown {t} normal both;' },
+            { id: 'zoomIn', label: 'Zoom In', category: 'Entrance', css: 'opacity: 0; transform: scale3d(0.3, 0.3, 0.3); animation: zoomIn {t} normal both;' },
+            { id: 'pulse', label: 'Pulse', category: 'Attention', css: 'animation: pulse {t} infinite;' },
+            { id: 'float', label: 'Floating', category: 'Attention', css: 'animation: float {t} infinite ease-in-out;' },
+            { id: 'spin', label: 'Spin', category: 'Attention', css: 'animation: spin {t} infinite linear;' },
+            { id: 'bounce', label: 'Bounce', category: 'Attention', css: 'transform-origin: center bottom; animation: bounce {t} infinite;' },
+            { id: 'rubberBand', label: 'Rubber Band', category: 'Attention', css: 'animation: rubberBand {t} infinite;' },
+            { id: 'shake', label: 'Shake', category: 'Attention', css: 'animation: shake {t} infinite;' },
+            { id: 'draw', label: 'Draw Path', category: 'Special', css: 'stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: draw {t} normal forwards;' },
+        ];
+
+        const GLOBAL_STYLES = `
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes scaleIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+            @keyframes slideUp { from { transform: translateY(50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+            @keyframes slideDown { from { transform: translateY(-50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+            @keyframes zoomIn { from { opacity: 0; transform: scale3d(0.3, 0.3, 0.3); } 50% { opacity: 1; } }
+            @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+            @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+            @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+            @keyframes bounce { 0%, 20%, 53%, 80%, 100% { transform: translate3d(0,0,0); } 40%, 43% { transform: translate3d(0, -30px, 0); } 70% { transform: translate3d(0, -15px, 0); } 90% { transform: translate3d(0,-4px,0); } }
+            @keyframes rubberBand { 0% { transform: scale3d(1, 1, 1); } 30% { transform: scale3d(1.25, 0.75, 1); } 40% { transform: scale3d(0.75, 1.25, 1); } 50% { transform: scale3d(1.15, 0.85, 1); } 65% { transform: scale3d(0.95, 1.05, 1); } 75% { transform: scale3d(1.05, 0.95, 1); } 100% { transform: scale3d(1, 1, 1); } }
+            @keyframes shake { 0%, 100% { transform: translate3d(0, 0, 0); } 10%, 30%, 50%, 70%, 90% { transform: translate3d(-5px, 0, 0); } 20%, 40%, 60%, 80% { transform: translate3d(5px, 0, 0); } }
+            @keyframes draw { to { stroke-dashoffset: 0; } }
+            .canvas-obj { transform-box: fill-box; transform-origin: center; vector-effect: non-scaling-stroke; }
+        `;
+
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+
+        // --- Main Component ---
+        function CanvasStudioUltimate() {
+            // --- State ---
+            const [elements, setElements] = useState([]);
+            const [selection, setSelection] = useState(null); 
+            const [view, setView] = useState({ x: 0, y: 0, zoom: 1 });
+            const [tool, setTool] = useState('select'); 
+            const [isPlaying, setIsPlaying] = useState(false);
+            const [showGrid, setShowGrid] = useState(true);
+            const [isDragging, setIsDragging] = useState(false);
+            const [dragAction, setDragAction] = useState(null);
+            const [showIntro, setShowIntro] = useState(true);
+            const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+            const [activeTab, setActiveTab] = useState('properties'); 
+            
+            const svgRef = useRef(null);
+            const containerRef = useRef(null);
+            const dragStartRef = useRef({ x: 0, y: 0, elState: null }); 
+
+            // --- Helpers ---
+            
+            const getPointerPos = (e) => {
+                if (!svgRef.current) return { x: 0, y: 0 };
+                const pt = svgRef.current.createSVGPoint();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                pt.x = clientX;
+                pt.y = clientY;
+                return pt.matrixTransform(svgRef.current.getScreenCTM().inverse());
+            };
+
+            const addElement = (type, extraProps = {}) => {
+                const containerW = containerRef.current?.clientWidth || 800;
+                const containerH = containerRef.current?.clientHeight || 600;
+                const centerX = (view.x + containerW/2) / view.zoom;
+                const centerY = (view.y + containerH/2) / view.zoom;
+
+                const baseEl = {
+                    id: generateId(),
+                    type,
+                    x: centerX - 50,
+                    y: centerY - 50,
+                    width: 100,
+                    height: 100,
+                    rotation: 0,
+                    opacity: 1,
+                    visible: true,
+                    locked: false,
+                    fill: type === 'line' ? 'none' : '#3b82f6',
+                    fillType: 'solid',
+                    gradientStart: '#3b82f6',
+                    gradientEnd: '#60a5fa',
+                    stroke: type === 'line' ? '#1e293b' : 'none',
+                    strokeWidth: type === 'line' ? 4 : 0,
+                    strokeDash: 0,
+                    borderRadius: 0,
+                    shadow: false,
+                    text: 'Double click to edit',
+                    fontSize: 24,
+                    fontFamily: 'Inter, sans-serif',
+                    fontWeight: 'normal',
+                    textAlign: 'start',
+                    x2: centerX + 50,
+                    y2: centerY + 50,
+                    markerEnd: 'none',
+                    animations: [],
+                    ...extraProps
+                };
+
+                if (type === 'circle') baseEl.borderRadius = 50;
+                if (type === 'text') { baseEl.width = 250; baseEl.height = 40; baseEl.fill = '#1e293b'; }
+                
+                setElements(prev => [...prev, baseEl]);
+                setSelection(baseEl.id);
+                setIsInspectorOpen(true);
+                setTool('select');
+            };
+
+            const updateElement = (id, updates) => {
+                setElements(prev => prev.map(el => el.id === id ? { ...el, ...updates } : el));
+            };
+
+            const removeElement = (id) => {
+                setElements(prev => prev.filter(el => el.id !== id));
+                if (selection === id) {
+                    setSelection(null);
+                    setIsInspectorOpen(false);
+                }
+            };
+
+            const duplicateElement = (id) => {
+                const original = elements.find(e => e.id === id);
+                if (!original) return;
+                const newEl = { ...original, id: generateId(), x: original.x + 20, y: original.y + 20 };
+                setElements(prev => [...prev, newEl]);
+                setSelection(newEl.id);
+            };
+
+            // --- Animation Management ---
+
+            const addAnimation = (elId) => {
+                const el = elements.find(e => e.id === elId);
+                if (!el) return;
+                const newAnim = {
+                    id: generateId(),
+                    type: 'fade',
+                    duration: 1,
+                    delay: 0,
+                    ease: 'ease-out',
+                    pathX: 100,
+                    pathY: 0
+                };
+                updateElement(elId, { animations: [...el.animations, newAnim] });
+            };
+
+            const updateAnimation = (elId, animIndex, updates) => {
+                const el = elements.find(e => e.id === elId);
+                if (!el) return;
+                const newAnims = [...el.animations];
+                newAnims[animIndex] = { ...newAnims[animIndex], ...updates };
+                updateElement(elId, { animations: newAnims });
+            };
+
+            const removeAnimation = (elId, animIndex) => {
+                const el = elements.find(e => e.id === elId);
+                if (!el) return;
+                const newAnims = el.animations.filter((_, i) => i !== animIndex);
+                updateElement(elId, { animations: newAnims });
+            };
+
+            const autoSequenceAnimations = () => {
+                let currentTime = 0;
+                const newElements = elements.map(el => {
+                    if (el.animations.length === 0) return el;
+                    
+                    const newAnims = el.animations.map(anim => {
+                        const updatedAnim = { ...anim, delay: parseFloat(currentTime.toFixed(2)) };
+                        currentTime += anim.duration;
+                        return updatedAnim;
+                    });
+                    
+                    return { ...el, animations: newAnims };
+                });
+                setElements(newElements);
+                setActiveTab('timeline');
+            };
+
+            // --- Interaction Logic ---
+
+            const handleDrop = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const file = e.dataTransfer.files[0];
+                if (file && file.type === "image/svg+xml") {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        addElement('image', {
+                            href: event.target.result,
+                            width: 200,
+                            height: 200,
+                            fill: 'transparent'
+                        });
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const handleDragOver = (e) => e.preventDefault();
+
+            const handlePointerDown = (e, id, action = 'move', payload = null) => {
+                e.stopPropagation(); 
+                if (tool !== 'select' && !id) return;
+                if (e.button === 1 || tool === 'hand') return; 
+
+                if (id) {
+                    setSelection(id);
+                    setIsInspectorOpen(true);
+                    const el = elements.find(e => e.id === id);
+                    if (el.locked) return;
+                    setIsDragging(true);
+                    setDragAction(action);
+                    const pos = getPointerPos(e);
+                    dragStartRef.current = { startMouse: pos, elState: JSON.parse(JSON.stringify(el)), payload };
+                } else {
+                    setSelection(null);
+                    setIsInspectorOpen(false);
+                }
+            };
+
+            const handlePointerMove = (e) => {
+                if (!isDragging || !selection) return;
+                e.preventDefault(); 
+                
+                const currentMouse = getPointerPos(e);
+                const { startMouse, elState, payload } = dragStartRef.current;
+                const dx = currentMouse.x - startMouse.x;
+                const dy = currentMouse.y - startMouse.y;
+                const isShift = e.shiftKey;
+
+                if (dragAction === 'move') {
+                    if (elState.type === 'line') {
+                        updateElement(selection, { x: elState.x + dx, y: elState.y + dy, x2: elState.x2 + dx, y2: elState.y2 + dy });
+                    } else {
+                        updateElement(selection, { x: elState.x + dx, y: elState.y + dy });
+                    }
+                } 
+                else if (dragAction.startsWith('resize')) {
+                    let { x, y, width, height, fontSize } = elState;
+                    let newX = x, newY = y, newW = width, newH = height;
+
+                    if (dragAction.includes('e')) newW = width + dx;
+                    if (dragAction.includes('w')) { newX = x + dx; newW = width - dx; }
+                    if (dragAction.includes('s')) newH = height + dy;
+                    if (dragAction.includes('n')) { newY = y + dy; newH = height - dy; }
+
+                    if (isShift && (dragAction.includes('nw') || dragAction.includes('se') || dragAction.includes('ne') || dragAction.includes('sw'))) {
+                        const ratio = width / height;
+                        if (Math.abs(newW) > Math.abs(newH)) newH = newW / ratio;
+                        else newW = newH * ratio;
+                    }
+
+                    let newFontSize = fontSize;
+                    if (elState.type === 'text') {
+                        const scaleFactor = newW / width;
+                        newFontSize = fontSize * scaleFactor;
+                    }
+                    updateElement(selection, { x: newX, y: newY, width: newW, height: newH, fontSize: newFontSize });
+                }
+                else if (dragAction === 'line-end') updateElement(selection, { x2: elState.x2 + dx, y2: elState.y2 + dy });
+                else if (dragAction === 'line-start') updateElement(selection, { x: elState.x + dx, y: elState.y + dy });
+                else if (dragAction === 'move-target') {
+                    const animIndex = payload;
+                    const anim = elState.animations[animIndex];
+                    updateAnimation(selection, animIndex, { 
+                        pathX: anim.pathX + dx,
+                        pathY: anim.pathY + dy
+                    });
+                }
+            };
+
+            const handlePointerUp = () => { setIsDragging(false); setDragAction(null); };
+
+            const handleTextDoubleClick = (id) => {
+                const el = elements.find(e => e.id === id);
+                if (!el) return;
+                const newText = prompt("Edit Text:", el.text);
+                if (newText !== null) {
+                    updateElement(id, { text: newText });
+                }
+            };
+
+            const handleExport = () => {
+                if (!svgRef.current) return;
+                const clone = svgRef.current.cloneNode(true);
+                clone.querySelectorAll('.ui-layer').forEach(el => el.remove());
+                const style = document.createElement('style');
+                
+                const dynamicKeyframes = elements.flatMap(el => 
+                    el.animations.map((anim, idx) => {
+                        if(anim.type === 'move') {
+                            return `@keyframes move-${el.id}-${idx} { to { transform: translate(${anim.pathX}px, ${anim.pathY}px); } }`;
+                        }
+                        return '';
+                    })
+                ).join('\n');
+
+                style.textContent = GLOBAL_STYLES + '\n' + dynamicKeyframes;
+                clone.prepend(style);
+                
+                clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+                let svgData = new XMLSerializer().serializeToString(clone);
+                svgData = '<?xml version="1.0" standalone="no"?>\r\n' + svgData;
+
+                const blob = new Blob([svgData], { type: 'image/svg+xml' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'canvas-studio-export.svg';
+                a.click();
+            };
+
+            const handleWheel = (e) => {
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    const delta = -e.deltaY * 0.001;
+                    const newZoom = Math.min(Math.max(0.1, view.zoom + delta), 10);
+                    setView(v => ({ ...v, zoom: newZoom }));
+                } else {
+                    setView(v => ({ ...v, x: v.x + e.deltaX, y: v.y + e.deltaY }));
+                }
+            };
+
+            // --- Render Logic ---
+            const renderElement = (el) => {
+                const isSelected = selection === el.id;
+                
+                let style = { 
+                    opacity: el.opacity, 
+                    pointerEvents: 'all',
+                    cursor: tool === 'select' ? 'move' : 'default',
+                    touchAction: 'none' 
+                };
+
+                if (isPlaying && el.animations.length > 0) {
+                    const animationStrings = el.animations.map((anim, idx) => {
+                        const preset = ANIMATION_PRESETS.find(a => a.id === anim.type);
+                        if (!preset) return '';
+                        
+                        const timing = `${anim.duration}s ${anim.ease} ${anim.delay}s`;
+                        let cssPart = preset.css.match(/animation:\s*([^;]+);/)?.[1] || '';
+                        
+                        cssPart = cssPart.replace('{t}', timing);
+                        if (anim.type === 'move') {
+                            cssPart = cssPart.replace('{id}', el.id).replace('{idx}', idx);
+                        }
+                        return cssPart;
+                    }).filter(Boolean);
+
+                    if (animationStrings.length > 0) {
+                        style.animation = animationStrings.join(', ');
+                    }
+                }
+
+                const fill = el.fillType === 'gradient' ? `url(#grad-${el.id})` : el.fill;
+                const filter = el.shadow ? 'url(#shadow)' : '';
+                
+                const eventHandlers = {
+                    onMouseDown: (e) => handlePointerDown(e, el.id),
+                    onTouchStart: (e) => handlePointerDown(e, el.id)
+                };
+
+                const common = {
+                    fill, filter, stroke: el.stroke, strokeWidth: el.strokeWidth, strokeDasharray: el.strokeDash,
+                    ...eventHandlers,
+                    style, className: "canvas-obj"
+                };
+
+                if (el.type === 'line') {
+                    return (
+                        <g key={el.id} className="canvas-obj" style={style}>
+                            <line x1={el.x} y1={el.y} x2={el.x2} y2={el.y2} stroke={el.stroke} strokeWidth={el.strokeWidth} strokeDasharray={el.strokeDash} markerEnd={el.markerEnd === 'arrow' ? 'url(#arrow)' : ''} {...eventHandlers} />
+                            <line x1={el.x} y1={el.y} x2={el.x2} y2={el.y2} stroke="transparent" strokeWidth="20" {...eventHandlers} />
+                        </g>
+                    );
+                }
+
+                if (el.type === 'image') {
+                    return <image key={el.id} href={el.href} x={el.x} y={el.y} width={el.width} height={el.height} preserveAspectRatio="none" {...common} />;
+                }
+                if (el.type === 'text') {
+                    const lines = el.text.split('\n');
+                    const lineHeight = el.fontSize * 1.2;
+                    return (
+                        <text key={el.id} x={el.x} y={el.y + el.fontSize} fontSize={el.fontSize} fontFamily={el.fontFamily} fontWeight={el.fontWeight} textAnchor={el.textAlign} {...common} style={{...style, userSelect: 'none'}} onDoubleClick={(e) => { e.stopPropagation(); handleTextDoubleClick(el.id); }}>
+                            {lines.map((line, i) => (
+                                <tspan key={i} x={el.x} dy={i === 0 ? 0 : lineHeight}>{line}</tspan>
+                            ))}
+                        </text>
+                    );
+                }
+                if (el.type === 'circle') {
+                    return <circle key={el.id} cx={el.x + el.width/2} cy={el.y + el.height/2} r={el.width/2} {...common} />;
+                }
+                return <rect key={el.id} x={el.x} y={el.y} width={el.width} height={el.height} rx={el.borderRadius} {...common} />;
+            };
+
+            const renderTransformGizmo = () => {
+                if (!selection || isPlaying) return null;
+                const el = elements.find(e => e.id === selection);
+                if (!el || el.locked) return null;
+
+                const handleSize = 10 / view.zoom; 
+                const borderSize = 2 / view.zoom;
+
+                const pathGizmos = el.animations.map((anim, idx) => {
+                    if (anim.type !== 'move') return null;
+                    return (
+                        <g className="ui-layer" key={idx}>
+                            <line x1={el.x + el.width/2} y1={el.y + el.height/2} x2={el.x + el.width/2 + anim.pathX} y2={el.y + el.height/2 + anim.pathY} stroke="#10b981" strokeWidth={2/view.zoom} strokeDasharray={4/view.zoom} />
+                            <circle cx={el.x + el.width/2 + anim.pathX} cy={el.y + el.height/2 + anim.pathY} r={handleSize * 1.2} fill="#10b981" stroke="white" strokeWidth={borderSize} className="cursor-move" onMouseDown={(e) => handlePointerDown(e, el.id, 'move-target', idx)} onTouchStart={(e) => handlePointerDown(e, el.id, 'move-target', idx)} />
+                            <text x={el.x + el.width/2 + anim.pathX + 15} y={el.y + el.height/2 + anim.pathY + 5} fontSize={12} fill="#10b981" fontWeight="bold" pointerEvents="none">#{idx+1}</text>
+                        </g>
+                    );
+                });
+
+                const handlers = (action) => ({
+                    onMouseDown: (e) => handlePointerDown(e, el.id, action),
+                    onTouchStart: (e) => handlePointerDown(e, el.id, action)
+                });
+
+                if (el.type === 'line') {
+                    return (
+                        <g className="ui-layer">
+                            {pathGizmos}
+                            <circle cx={el.x} cy={el.y} r={handleSize} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-move" {...handlers('line-start')} />
+                            <circle cx={el.x2} cy={el.y2} r={handleSize} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-move" {...handlers('line-end')} />
+                        </g>
+                    );
+                }
+                return (
+                    <g className="ui-layer">
+                        {pathGizmos}
+                        <rect x={el.x} y={el.y} width={el.width} height={el.height} fill="none" stroke="#2563eb" strokeWidth={borderSize} strokeDasharray={4/view.zoom} pointerEvents="none"/>
+                        <rect x={el.x - handleSize} y={el.y - handleSize} width={handleSize*2} height={handleSize*2} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-nwse-resize" {...handlers('resize-nw')} />
+                        <rect x={el.x + el.width - handleSize} y={el.y - handleSize} width={handleSize*2} height={handleSize*2} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-nesw-resize" {...handlers('resize-ne')} />
+                        <rect x={el.x - handleSize} y={el.y + el.height - handleSize} width={handleSize*2} height={handleSize*2} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-nesw-resize" {...handlers('resize-sw')} />
+                        <rect x={el.x + el.width - handleSize} y={el.y + el.height - handleSize} width={handleSize*2} height={handleSize*2} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-nwse-resize" {...handlers('resize-se')} />
+                    </g>
+                );
+            };
+
+            const selectedEl = elements.find(e => e.id === selection);
+            const categories = [...new Set(ANIMATION_PRESETS.map(a => a.category))];
+
+            return (
+                <div className="flex h-screen bg-[#f1f5f9] text-slate-800 font-sans overflow-hidden flex-col md:flex-row">
+                    
+                    {/* Intro */}
+                    {showIntro && (
+                        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+                                <div className="grid md:grid-cols-2">
+                                    <div className="bg-indigo-600 p-8 text-white flex flex-col justify-center">
+                                        <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mb-6"><Sparkles size={32} /></div>
+                                        <h2 className="text-3xl font-bold mb-4">Canvas Studio</h2>
+                                        <p className="text-indigo-100 text-lg leading-relaxed">Pro SVG animations with Timeline Sequencing.</p>
+                                    </div>
+                                    <div className="p-8 flex flex-col justify-center bg-white">
+                                        <h3 className="font-bold text-slate-800 text-lg mb-6">Features:</h3>
+                                        <div className="space-y-4 mb-6">
+                                            <div className="flex gap-3 items-start">
+                                                <div className="bg-amber-100 p-2 rounded-lg text-amber-600 shrink-0"><Clock size={18}/></div>
+                                                <div><h4 className="font-semibold text-slate-900 text-sm">Sequence Animations</h4><p className="text-xs text-slate-500">Auto-order animations easily.</p></div>
+                                            </div>
+                                            <div className="flex gap-3 items-start">
+                                                <div className="bg-green-100 p-2 rounded-lg text-green-600 shrink-0"><Type size={18}/></div>
+                                                <div><h4 className="font-semibold text-slate-900 text-sm">Rich Text</h4><p className="text-xs text-slate-500">Double-click to edit content.</p></div>
+                                            </div>
+                                        </div>
+                                        <button onClick={() => setShowIntro(false)} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2">Start Creating <ArrowRight size={18}/></button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Toolbar */}
+                    <div className="order-3 md:order-1 w-full md:w-16 bg-white border-t md:border-t-0 md:border-r border-slate-200 flex flex-row md:flex-col items-center justify-around md:justify-start py-2 md:py-4 gap-2 md:gap-4 z-40 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] md:shadow-sm shrink-0">
+                        <div className="hidden md:flex w-10 h-10 bg-indigo-600 rounded-xl items-center justify-center text-white shadow-lg shadow-indigo-200 shrink-0"><Layers size={20} strokeWidth={2.5}/></div>
+                        <div className="hidden md:block w-8 h-px bg-slate-100" />
+                        {[ { id: 'select', icon: MousePointer2 }, { id: 'rect', icon: Square }, { id: 'circle', icon: Circle }, { id: 'text', icon: Type }, { id: 'line', icon: Minus, rotate: true } ].map(t => (
+                            <button key={t.id} onClick={() => t.id === 'select' ? setTool('select') : addElement(t.id)} className={`p-3 rounded-xl transition-all duration-200 group relative ${tool === t.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
+                                <t.icon size={20} className={t.rotate ? '-rotate-45' : ''}/>
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Main Canvas Area */}
+                    <div className="order-2 flex-1 flex flex-col relative h-full overflow-hidden">
+                        <div className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 z-10 shrink-0">
+                            <div className="flex items-center gap-4">
+                                <h1 className="font-bold text-slate-800 tracking-tight flex items-center gap-2 text-sm md:text-base">Canvas Studio <span className="text-[10px] px-1.5 py-0.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-md font-medium uppercase tracking-wider">Ultimate</span></h1>
+                                <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 border-l pl-3 ml-1"><Upload size={12}/> Drop SVG</div>
+                            </div>
+                            <div className="flex items-center gap-2 md:gap-3">
+                                <button onClick={() => setShowGrid(!showGrid)} className={`p-2 rounded-lg hover:bg-slate-100 hidden md:block ${showGrid ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400'}`}><Grid size={18}/></button>
+                                <div className="flex items-center bg-slate-100 rounded-lg p-1">
+                                    <button onClick={() => setView(v => ({...v, zoom: Math.max(0.2, v.zoom - 0.2)}))} className="p-1.5 hover:bg-white rounded-md text-slate-600"><ZoomOut size={16}/></button>
+                                    <span className="text-xs font-mono w-8 text-center hidden sm:block">{Math.round(view.zoom * 100)}%</span>
+                                    <button onClick={() => setView(v => ({...v, zoom: Math.min(5, v.zoom + 0.2)}))} className="p-1.5 hover:bg-white rounded-md text-slate-600"><ZoomIn size={16}/></button>
+                                </div>
+                                <button onClick={() => setIsPlaying(!isPlaying)} className={`flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-sm font-semibold transition-all ${isPlaying ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-slate-900 text-white hover:bg-slate-800 shadow-md'}`}>
+                                    {isPlaying ? <Pause size={16} fill="currentColor"/> : <Play size={16} fill="currentColor"/>} <span className="hidden sm:inline">{isPlaying ? 'Pause' : 'Play'}</span>
+                                </button>
+                                <button onClick={handleExport} className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Export SVG"><Download size={20} /></button>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 bg-[#e5e5e5] relative overflow-hidden touch-none" ref={containerRef} onDrop={handleDrop} onDragOver={handleDragOver}>
+                            <div className="absolute inset-0 pointer-events-none" style={{ backgroundSize: `${20 * view.zoom}px ${20 * view.zoom}px`, backgroundImage: showGrid ? `radial-gradient(#94a3b8 1px, transparent 1px)` : 'none', backgroundPosition: `${view.x}px ${view.y}px`, opacity: 0.5 }}/>
+                            <div className="w-full h-full" onMouseDown={handlePointerDown} onMouseMove={handlePointerMove} onMouseUp={handlePointerUp} onMouseLeave={handlePointerUp} onTouchStart={handlePointerDown} onTouchMove={handlePointerMove} onTouchEnd={handlePointerUp} onWheel={handleWheel}>
+                                <svg xmlns="http://www.w3.org/2000/svg" ref={svgRef} width="100%" height="100%" viewBox={`${-view.x / view.zoom} ${-view.y / view.zoom} ${(containerRef.current?.clientWidth || 800) / view.zoom} ${(containerRef.current?.clientHeight || 600) / view.zoom}`} style={{ touchAction: 'none' }}>
+                                    <defs>
+                                        <style>
+                                            {GLOBAL_STYLES}
+                                            {elements.flatMap(el => el.animations.map((anim, idx) => anim.type === 'move' ? `@keyframes move-${el.id}-${idx} { to { transform: translate(${anim.pathX}px, ${anim.pathY}px); } }` : '')).join('\n')}
+                                        </style>
+                                        <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#000000" floodOpacity="0.15"/></filter>
+                                        <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#333" /></marker>
+                                        {elements.map(el => el.fillType === 'gradient' && (<linearGradient key={`grad-${el.id}`} id={`grad-${el.id}`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={el.gradientStart} /><stop offset="100%" stopColor={el.gradientEnd} /></linearGradient>))}
+                                    </defs>
+                                    {elements.map(renderElement)}
+                                    {renderTransformGizmo()}
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Inspector */}
+                    <div className={`fixed md:static inset-x-0 bottom-[64px] md:bottom-0 z-30 bg-white border-t md:border-t-0 md:border-l border-slate-200 md:w-80 w-full md:h-full shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.2)] md:shadow-none transition-transform duration-300 ease-in-out flex flex-col ${selectedEl && isInspectorOpen ? 'translate-y-0' : 'translate-y-[110%] md:translate-y-0'}`} style={{ maxHeight: '60vh', height: 'auto' }}>
+                        <div className="flex border-b border-slate-200">
+                            <button onClick={() => setActiveTab('properties')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === 'properties' ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/50' : 'text-slate-500 hover:bg-slate-50'}`}>Properties</button>
+                            <button onClick={() => setActiveTab('timeline')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === 'timeline' ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/50' : 'text-slate-500 hover:bg-slate-50'}`}>Timeline</button>
+                            <button onClick={() => setIsInspectorOpen(false)} className="md:hidden px-4 text-slate-400"><ChevronDown size={18}/></button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto custom-scrollbar">
+                            {activeTab === 'properties' && selectedEl ? (
+                                <div className="pb-8">
+                                    <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/80 backdrop-blur flex justify-between items-center shrink-0">
+                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{selectedEl.type}</span>
+                                        <div className="flex items-center gap-1">
+                                            <button onClick={() => updateElement(selectedEl.id, { locked: !selectedEl.locked })} className={`p-2 rounded hover:bg-slate-200 ${selectedEl.locked ? 'text-red-500' : 'text-slate-400'}`}>{selectedEl.locked ? <Lock size={16}/> : <Unlock size={16}/>}</button>
+                                            <button onClick={() => duplicateElement(selectedEl.id)} className="p-2 rounded hover:bg-slate-200 text-slate-400"><Copy size={16}/></button>
+                                            <button onClick={() => removeElement(selectedEl.id)} className="p-2 rounded hover:bg-red-100 text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
+                                        </div>
+                                    </div>
+
+                                    {selectedEl.type === 'text' && (
+                                        <div className="p-5 border-b border-slate-100">
+                                            <h3 className="text-xs font-bold text-slate-900 mb-2">Content</h3>
+                                            <textarea rows={3} value={selectedEl.text} onChange={(e) => updateElement(selectedEl.id, {text: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg p-2 focus:ring-2 focus:ring-indigo-100 outline-none resize-none" placeholder="Type text here..." />
+                                            <div className="flex gap-2 mt-2">
+                                                <select value={selectedEl.fontFamily} onChange={(e) => updateElement(selectedEl.id, {fontFamily: e.target.value})} className="flex-1 text-xs border border-slate-200 rounded p-1.5"><option value="Inter, sans-serif">Sans</option><option value="Times New Roman, serif">Serif</option><option value="Courier New, monospace">Mono</option></select>
+                                                <input type="number" value={Math.round(selectedEl.fontSize)} onChange={(e) => updateElement(selectedEl.id, {fontSize: +e.target.value})} className="w-14 text-xs border border-slate-200 rounded p-1.5" />
+                                            </div>
+                                        </div>
+                                    )}
+                                    
+                                    {selectedEl.type !== 'line' && selectedEl.type !== 'image' && (
+                                        <div className="p-5 border-b border-slate-100">
+                                            <h3 className="text-xs font-bold text-slate-900 mb-3">Fill Color</h3>
+                                            <div className="flex flex-wrap gap-1.5">{COLORS.Blue.map(c => <button key={c} onClick={() => updateElement(selectedEl.id, {fill: c, fillType: 'solid'})} className="w-5 h-5 rounded-full border border-slate-100" style={{backgroundColor: c}}/>)}</div>
+                                            <div className="mt-2"><input type="color" value={selectedEl.fill} onChange={(e) => updateElement(selectedEl.id, {fill: e.target.value, fillType: 'solid'})} className="w-full h-6"/></div>
+                                        </div>
+                                    )}
+
+                                    <div className="p-5 bg-gradient-to-br from-indigo-50 to-white">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h3 className="text-xs font-bold text-indigo-900 flex items-center gap-2"><Play size={12} className="fill-indigo-900"/> Animation Chain</h3>
+                                            <button onClick={() => addAnimation(selectedEl.id)} className="p-1 rounded bg-indigo-100 text-indigo-600 hover:bg-indigo-200"><Plus size={14}/></button>
+                                        </div>
+                                        
+                                        <div className="space-y-4">
+                                            {selectedEl.animations.length === 0 && <p className="text-xs text-slate-400 italic">No animations added.</p>}
+                                            {selectedEl.animations.map((anim, idx) => (
+                                                <div key={idx} className="bg-white border border-indigo-100 rounded-lg p-3 shadow-sm relative group">
+                                                    <button onClick={() => removeAnimation(selectedEl.id, idx)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><X size={12}/></button>
+                                                    <div className="mb-2">
+                                                        <span className="text-[10px] font-bold text-indigo-300 uppercase block mb-1">Step {idx + 1}</span>
+                                                        <select value={anim.type} onChange={(e) => updateAnimation(selectedEl.id, idx, { type: e.target.value })} className="w-full text-sm font-medium border-b border-indigo-100 pb-1 bg-transparent outline-none">
+                                                            {ANIMATION_PRESETS.map(p => (<option key={p.id} value={p.id}>{p.label}</option>))}
+                                                        </select>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div><label className="text-[10px] text-slate-400">Duration</label><input type="number" step="0.1" value={anim.duration} onChange={(e) => updateAnimation(selectedEl.id, idx, { duration: +e.target.value })} className="w-full text-xs border border-slate-200 rounded p-1"/></div>
+                                                        <div><label className="text-[10px] text-slate-400">Delay</label><input type="number" step="0.1" value={anim.delay} onChange={(e) => updateAnimation(selectedEl.id, idx, { delay: +e.target.value })} className="w-full text-xs border border-slate-200 rounded p-1"/></div>
+                                                    </div>
+                                                    {anim.type === 'move' && <div className="mt-2 text-[10px] text-green-600 bg-green-50 p-1 rounded">Drag green target #{idx+1} on canvas</div>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : activeTab === 'timeline' ? (
+                                <div className="p-4">
+                                    <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4 mb-4 text-center">
+                                        <Wand2 size={24} className="mx-auto text-indigo-500 mb-2"/>
+                                        <h3 className="font-bold text-indigo-900 text-sm mb-1">Auto-Sequencer</h3>
+                                        <p className="text-xs text-indigo-700 mb-3">Instantly arrange all animations to play one after another.</p>
+                                        <button onClick={autoSequenceAnimations} className="bg-indigo-600 text-white text-xs font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 w-full transition-colors">Apply Sequence</button>
+                                    </div>
+                                    <h3 className="text-xs font-bold text-slate-900 mb-3 flex items-center gap-2"><Clock size={12}/> Global Timeline</h3>
+                                    <div className="space-y-2 relative">
+                                        <div className="absolute left-3 top-0 bottom-0 w-px bg-slate-200 z-0"></div>
+                                        {elements.flatMap(el => el.animations.map((anim, idx) => ({ el, anim, idx }))).sort((a, b) => a.anim.delay - b.anim.delay).map(({ el, anim, idx }, i) => (
+                                            <div key={`${el.id}-${idx}`} className="relative z-10 bg-white border border-slate-200 rounded-lg p-3 shadow-sm ml-6 hover:border-indigo-300 transition-colors" onClick={() => { setSelection(el.id); setActiveTab('properties'); }}>
+                                                <div className="absolute -left-8 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-slate-300 border-2 border-white"></div>
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <span className="text-xs font-bold text-slate-700 truncate max-w-[120px]">{el.type === 'text' ? (el.text.slice(0,10) || 'Text') : el.type}</span>
+                                                    <span className="text-[10px] font-mono text-slate-400">@ {anim.delay}s</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-xs text-indigo-600">
+                                                    {anim.type === 'move' ? <Move size={12}/> : <Play size={12}/>}
+                                                    <span className="capitalize">{anim.type}</span>
+                                                    <span className="text-slate-400">({anim.duration}s)</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center">
+                                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4"><MousePointer2 size={32} className="opacity-20"/></div>
+                                    <h3 className="font-semibold text-slate-600">No Selection</h3>
+                                    <p className="text-sm mt-1">Select an object to edit properties.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<CanvasStudioUltimate />);
+    </script>
+</body>
+</html>
