@@ -40,9 +40,14 @@ A professional, browser-based SVG design and animation tool with advanced featur
   - Gradient color shifts with hue rotation and saturation
 
 ### 📥 Import & Export
-- **SVG Import**: Load and edit existing SVG files with Bezier curve preservation
+- **SVG Import**: Load and edit existing SVG files with full element support
+  - **Complete Element Support**: Paths, rectangles, circles, ellipses, polygons, polylines, lines, and text
+  - **Transform Preservation**: Accurately parses translate, rotate, scale, and matrix transforms
+  - **Nested Groups**: Maintains SVG group hierarchy with proper nesting
+  - **Style Parsing**: Reads fill, stroke, opacity, and other attributes from both attributes and inline styles
+  - **Fully Editable**: All imported elements become fully editable with resize, rotate, and style controls
 - **Image Vectorization**: Convert PNG/JPG images to editable vector paths
-- **Smart Grouping**: Imported SVGs grouped by default for instant manipulation
+- **Smart Grouping**: Imported SVGs automatically grouped for easy manipulation (ungroup to edit individual elements)
 - **Clean Export**: Export to SVG with all animations and transforms preserved
 - **Templates**: 8+ built-in SVG templates for quick starts
 
@@ -50,9 +55,19 @@ A professional, browser-based SVG design and animation tool with advanced featur
 - **Responsive Design**: Works on desktop and mobile devices
 - **Purple Glass Theme**: Modern, professional dark UI
 - **Grid & Snap**: Optional grid overlay for precision
+- **Smart Guides**: Intelligent alignment guides with automatic snapping (see below)
 - **Zoom & Pan**: Smooth viewport controls with mouse wheel
 - **Keyboard Shortcuts**: Ctrl/Cmd for multi-select, Shift for proportional scaling
 - **Touch Support**: Full touch screen compatibility
+
+### 📏 Smart Guides (New!)
+Intelligent positioning system that helps align objects precisely:
+- **Auto-Detection**: Automatically detects when edges, centers, or corners align
+- **Visual Feedback**: Green dashed lines appear when alignment is detected
+- **Smart Snapping**: Objects snap to alignment points within 5px threshold
+- **6 Alignment Types**: Left, right, center (horizontal), top, bottom, middle (vertical)
+- **Toggle On/Off**: Click the alignment icon in the toolbar to enable/disable
+- **Works While Dragging**: Real-time alignment detection as you move objects
 
 ## 🚀 Getting Started
 
@@ -182,7 +197,19 @@ Continuous or repeating effects:
 
 ## 📝 License
 
-MIT License - Free to use, modify, and distribute
+This project is licensed under the **PolyForm Noncommercial License 1.0.0**. 
+
+### ✅ What you CAN do:
+- **Personal Use**: Use the software for hobby projects, private entertainment, or personal study.
+- **Research & Education**: Use it for research, experiments, or in educational institutions.
+- **Modify & Share**: Make changes to the code and share it with others (as long as they get this same license).
+
+### ❌ What you CANNOT do:
+- **Commercial Use**: Use the software for any purpose intended for commercial advantage or monetary compensation is strictly forbidden.
+- **Sell the Software**: You cannot sell the software or services based on it.
+- **Business Use**: Use it within a for-profit company for business operations.
+
+See the [LICENSE](LICENSE) file for the full legal text.
 
 ## 🤝 Contributing
 
@@ -191,7 +218,3 @@ This is a single-file project for maximum portability. To contribute:
 2. Test in multiple browsers
 3. Ensure no external dependencies added
 4. Maintain the single-file architecture
-
-## 🌟 Credits
-
-Built with modern web technologies and a focus on usability. Special thanks to the open-source community for the amazing tools and libraries.
