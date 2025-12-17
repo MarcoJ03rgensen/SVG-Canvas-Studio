@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Canvas Studio Ultimate</title>
+    <meta name="description" content="Professional SVG design and animation tool directly in your browser. Vectorize images, edit paths, and export clean SVG code.">
+    <title>SVG Canvas Studio Pro | Web Editor</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -14,6 +15,9 @@
     
     <!-- Babel for JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- ImageTracerJS for Vectorization -->
+    <script src="https://cdn.jsdelivr.net/npm/imagetracerjs@1.2.6/imagetracer_v1.2.6.min.js"></script>
 
     <style>
         /* Custom Scrollbar for Inspector */
@@ -22,14 +26,14 @@
             height: 6px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
-            background: #f1f5f9; 
+            background: #1e293b; 
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #cbd5e1; 
+            background: #475569; 
             border-radius: 3px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8; 
+            background: #64748b; 
         }
         /* Hide scrollbar for color picker row */
         .no-scrollbar::-webkit-scrollbar {
@@ -39,9 +43,14 @@
             -ms-overflow-style: none;
             scrollbar-width: none;
         }
+        /* Morph animation */
+        @keyframes morphPulse {
+            0%, 100% { d: path('M10,10 L90,10 L90,90 L10,90 Z'); }
+            50% { d: path('M30,10 L70,10 L80,90 L20,90 Z'); }
+        }
     </style>
 </head>
-<body class="bg-slate-50">
+<body class="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
@@ -51,7 +60,7 @@
             Trash2, Copy, Play, Pause, Grid, 
             Upload, Lock, Unlock, Check, X,
             ArrowRight, Sparkles, Move, Menu, ChevronUp, ChevronDown,
-            Clock, Plus, Wand2, AlignLeft
+            Clock, Plus, Wand2, AlignLeft, Code, Edit3
         } from 'https://esm.sh/lucide-react@0.263.1';
 
         const { useState, useRef, useEffect } = React;
@@ -77,14 +86,38 @@
             { id: 'scale', label: 'Pop In', category: 'Entrance', css: 'transform: scale(0); animation: scaleIn {t} normal both;' },
             { id: 'slideUp', label: 'Slide Up', category: 'Entrance', css: 'transform: translateY(50px); opacity: 0; animation: slideUp {t} normal both;' },
             { id: 'slideDown', label: 'Slide Down', category: 'Entrance', css: 'transform: translateY(-50px); opacity: 0; animation: slideDown {t} normal both;' },
+            { id: 'slideLeft', label: 'Slide Left', category: 'Entrance', css: 'transform: translateX(50px); opacity: 0; animation: slideLeft {t} normal both;' },
+            { id: 'slideRight', label: 'Slide Right', category: 'Entrance', css: 'transform: translateX(-50px); opacity: 0; animation: slideRight {t} normal both;' },
             { id: 'zoomIn', label: 'Zoom In', category: 'Entrance', css: 'opacity: 0; transform: scale3d(0.3, 0.3, 0.3); animation: zoomIn {t} normal both;' },
+            { id: 'rotateIn', label: 'Rotate In', category: 'Entrance', css: 'opacity: 0; transform: rotate(-180deg); animation: rotateIn {t} normal both;' },
             { id: 'pulse', label: 'Pulse', category: 'Attention', css: 'animation: pulse {t} infinite;' },
             { id: 'float', label: 'Floating', category: 'Attention', css: 'animation: float {t} infinite ease-in-out;' },
             { id: 'spin', label: 'Spin', category: 'Attention', css: 'animation: spin {t} infinite linear;' },
             { id: 'bounce', label: 'Bounce', category: 'Attention', css: 'transform-origin: center bottom; animation: bounce {t} infinite;' },
             { id: 'rubberBand', label: 'Rubber Band', category: 'Attention', css: 'animation: rubberBand {t} infinite;' },
             { id: 'shake', label: 'Shake', category: 'Attention', css: 'animation: shake {t} infinite;' },
+            { id: 'morph', label: 'Morph', category: 'Special', css: 'animation: morph-{id}-{idx} {t} normal both;' },
             { id: 'draw', label: 'Draw Path', category: 'Special', css: 'stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: draw {t} normal forwards;' },
+            { id: 'flip', label: 'Flip', category: 'Attention', css: 'animation: flip {t} normal both;' },
+            { id: 'color', label: 'Color Change', category: 'Style', css: 'animation: color-{id}-{idx} {t} normal both;' },
+            { id: 'textSize', label: 'Text Size', category: 'Style', css: 'animation: textSize-{id}-{idx} {t} normal both;' },
+        ];
+
+        const SVG_TEMPLATES = [
+            { id: 'logo1', name: 'Modern Circle', svg: '<circle cx="50" cy="50" r="40" fill="#6366f1" opacity="0.8"/><circle cx="50" cy="50" r="30" fill="none" stroke="#e0e7ff" stroke-width="2"/><text x="50" y="55" text-anchor="middle" font-size="20" fill="white" font-weight="bold">M</text>' },
+            { id: 'logo2', name: 'Tech Star', svg: '<polygon points="50,10 61,40 92,40 67,60 79,90 50,70 21,90 33,60 8,40 39,40" fill="#ec4899"/>' },
+            { id: 'shape1', name: 'Gradient Wave', svg: '<path d="M0,50 Q25,0 50,50 T100,50" stroke="#3b82f6" stroke-width="3" fill="none"/><path d="M0,60 Q25,10 50,60 T100,60" stroke="#06b6d4" stroke-width="3" fill="none" opacity="0.6"/>' },
+            { id: 'shape2', name: 'Nested Squares', svg: '<rect x="10" y="10" width="80" height="80" fill="none" stroke="#8b5cf6" stroke-width="2"/><rect x="20" y="20" width="60" height="60" fill="none" stroke="#a855f7" stroke-width="2"/><rect x="30" y="30" width="40" height="40" fill="none" stroke="#d946ef" stroke-width="2"/>' },
+            { id: 'icon1', name: 'Heart', svg: '<path d="M50,85 C20,65 5,50 5,35 C5,20 15,10 25,10 C35,10 50,20 50,20 C50,20 65,10 75,10 C85,10 95,20 95,35 C95,50 80,65 50,85 Z" fill="#f43f5e"/>' },
+            { id: 'icon2', name: 'Lightning', svg: '<polygon points="50,5 65,35 95,35 70,60 85,95 50,65 15,95 30,60 5,35 35,35" fill="#facc15"/>' },
+            { id: 'bg1', name: 'Grid Pattern', svg: '<defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="#e5e7eb" stroke-width="0.5"/></pattern></defs><rect width="100" height="100" fill="url(#grid)"/>' },
+            { id: 'bg2', name: 'Radial Burst', svg: '<circle cx="50" cy="50" r="40" fill="#fbbf24" opacity="0.3"/><circle cx="50" cy="50" r="25" fill="#f59e0b" opacity="0.5"/><circle cx="50" cy="50" r="10" fill="#d97706"/>' },
+        ];
+
+        const SVG_PRESETS = [
+            { id: 'preset1', name: 'Simple UI Kit', templates: ['logo1', 'shape2', 'icon1'] },
+            { id: 'preset2', name: 'Abstract Art', templates: ['shape1', 'bg1', 'bg2'] },
+            { id: 'preset3', name: 'Tech Icons', templates: ['logo2', 'icon2', 'shape2'] },
         ];
 
         const GLOBAL_STYLES = `
@@ -92,14 +125,19 @@
             @keyframes scaleIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
             @keyframes slideUp { from { transform: translateY(50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
             @keyframes slideDown { from { transform: translateY(-50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+            @keyframes slideLeft { from { transform: translateX(50px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+            @keyframes slideRight { from { transform: translateX(-50px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
             @keyframes zoomIn { from { opacity: 0; transform: scale3d(0.3, 0.3, 0.3); } 50% { opacity: 1; } }
+            @keyframes rotateIn { from { opacity: 0; transform: rotate(-180deg); } to { opacity: 1; transform: rotate(0deg); } }
             @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
             @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
             @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
             @keyframes bounce { 0%, 20%, 53%, 80%, 100% { transform: translate3d(0,0,0); } 40%, 43% { transform: translate3d(0, -30px, 0); } 70% { transform: translate3d(0, -15px, 0); } 90% { transform: translate3d(0,-4px,0); } }
             @keyframes rubberBand { 0% { transform: scale3d(1, 1, 1); } 30% { transform: scale3d(1.25, 0.75, 1); } 40% { transform: scale3d(0.75, 1.25, 1); } 50% { transform: scale3d(1.15, 0.85, 1); } 65% { transform: scale3d(0.95, 1.05, 1); } 75% { transform: scale3d(1.05, 0.95, 1); } 100% { transform: scale3d(1, 1, 1); } }
             @keyframes shake { 0%, 100% { transform: translate3d(0, 0, 0); } 10%, 30%, 50%, 70%, 90% { transform: translate3d(-5px, 0, 0); } 20%, 40%, 60%, 80% { transform: translate3d(5px, 0, 0); } }
+            @keyframes flip { 0% { transform: perspective(400px) rotateY(0); } 100% { transform: perspective(400px) rotateY(360deg); } }
             @keyframes draw { to { stroke-dashoffset: 0; } }
+            @keyframes morph-pulse { 0%, 100% { transform: scale(1) rotate(0deg); } 50% { transform: scale(1.1) rotate(5deg); } }
             .canvas-obj { transform-box: fill-box; transform-origin: center; vector-effect: non-scaling-stroke; }
         `;
 
@@ -118,11 +156,43 @@
             const [dragAction, setDragAction] = useState(null);
             const [showIntro, setShowIntro] = useState(true);
             const [isInspectorOpen, setIsInspectorOpen] = useState(false);
-            const [activeTab, setActiveTab] = useState('properties'); 
+            const [activeTab, setActiveTab] = useState('properties');
+            const [showTemplates, setShowTemplates] = useState(false);
+            const [showSVGEditor, setShowSVGEditor] = useState(false);
+            const [svgEditorContent, setSvgEditorContent] = useState('');
+            const [isProcessingImage, setIsProcessingImage] = useState(false);
+            const [editMode, setEditMode] = useState(false); // For path editing
+            const [showShapeMenu, setShowShapeMenu] = useState(false);
+            const [multiSelection, setMultiSelection] = useState([]); // Array of selected IDs
+            const [showLayersPanel, setShowLayersPanel] = useState(false);
+            const [draggedAnimIndex, setDraggedAnimIndex] = useState(null);
             
             const svgRef = useRef(null);
             const containerRef = useRef(null);
             const dragStartRef = useRef({ x: 0, y: 0, elState: null }); 
+
+            // --- Web Deployment Safety ---
+            useEffect(() => {
+                const handleBeforeUnload = (e) => {
+                    if (elements.length > 0) {
+                        e.preventDefault();
+                        e.returnValue = '';
+                    }
+                };
+                window.addEventListener('beforeunload', handleBeforeUnload);
+                return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+            }, [elements]);
+
+            // Close shape menu when clicking outside
+            useEffect(() => {
+                const handleClick = (e) => {
+                    if (showShapeMenu && !e.target.closest('.shape-menu-container')) {
+                        setShowShapeMenu(false);
+                    }
+                };
+                document.addEventListener('mousedown', handleClick);
+                return () => document.removeEventListener('mousedown', handleClick);
+            }, [showShapeMenu]);
 
             // --- Helpers ---
             
@@ -155,8 +225,10 @@
                     locked: false,
                     fill: type === 'line' ? 'none' : '#3b82f6',
                     fillType: 'solid',
-                    gradientStart: '#3b82f6',
-                    gradientEnd: '#60a5fa',
+                    gradientStops: [
+                        { offset: 0, color: '#3b82f6' },
+                        { offset: 100, color: '#60a5fa' }
+                    ],
                     stroke: type === 'line' ? '#1e293b' : 'none',
                     strokeWidth: type === 'line' ? 4 : 0,
                     strokeDash: 0,
@@ -171,12 +243,99 @@
                     y2: centerY + 50,
                     markerEnd: 'none',
                     animations: [],
+                    points: null, // For path editing
                     ...extraProps
                 };
 
                 if (type === 'circle') baseEl.borderRadius = 50;
                 if (type === 'text') { baseEl.width = 250; baseEl.height = 40; baseEl.fill = '#1e293b'; }
                 
+                // Initialize points for editable shapes
+                if (type === 'polygon') {
+                    baseEl.points = [{x: 50, y: 0}, {x: 100, y: 100}, {x: 0, y: 100}];
+                    baseEl.width = 100;
+                    baseEl.height = 100;
+                } else if (type === 'triangle') {
+                    baseEl.type = 'polygon';
+                    baseEl.points = [{x: 50, y: 0}, {x: 100, y: 100}, {x: 0, y: 100}];
+                } else if (type === 'pentagon') {
+                    baseEl.type = 'polygon';
+                    const pts = [];
+                    for (let i = 0; i < 5; i++) {
+                        const angle = (i * 2 * Math.PI / 5) - Math.PI / 2;
+                        pts.push({ x: 50 + 50 * Math.cos(angle), y: 50 + 50 * Math.sin(angle) });
+                    }
+                    baseEl.points = pts;
+                } else if (type === 'hexagon') {
+                    baseEl.type = 'polygon';
+                    const pts = [];
+                    for (let i = 0; i < 6; i++) {
+                        const angle = (i * 2 * Math.PI / 6) - Math.PI / 2;
+                        pts.push({ x: 50 + 50 * Math.cos(angle), y: 50 + 50 * Math.sin(angle) });
+                    }
+                    baseEl.points = pts;
+                } else if (type === 'octagon') {
+                    baseEl.type = 'polygon';
+                    const pts = [];
+                    for (let i = 0; i < 8; i++) {
+                        const angle = (i * 2 * Math.PI / 8) - Math.PI / 2;
+                        pts.push({ x: 50 + 50 * Math.cos(angle), y: 50 + 50 * Math.sin(angle) });
+                    }
+                    baseEl.points = pts;
+                } else if (type === 'star') {
+                    baseEl.type = 'polygon';
+                    const pts = [];
+                    for (let i = 0; i < 10; i++) {
+                        const angle = (i * Math.PI / 5) - Math.PI / 2;
+                        const radius = i % 2 === 0 ? 50 : 25;
+                        pts.push({ x: 50 + radius * Math.cos(angle), y: 50 + radius * Math.sin(angle) });
+                    }
+                    baseEl.points = pts;
+                } else if (type === 'heart') {
+                    baseEl.type = 'path';
+                    baseEl.commands = [
+                        { type: 'M', x: 50, y: 30 },
+                        { type: 'C', x1: 50, y1: 20, x2: 35, y2: 10, x: 25, y: 10 },
+                        { type: 'C', x1: 10, y1: 10, x2: 0, y2: 20, x: 0, y: 35 },
+                        { type: 'C', x1: 0, y1: 50, x2: 20, y2: 70, x: 50, y: 95 },
+                        { type: 'C', x1: 80, y1: 70, x2: 100, y2: 50, x: 100, y: 35 },
+                        { type: 'C', x1: 100, y1: 20, x2: 90, y2: 10, x: 75, y: 10 },
+                        { type: 'C', x1: 65, y1: 10, x2: 50, y2: 20, x: 50, y: 30 },
+                        { type: 'Z' }
+                    ];
+                } else if (type === 'diamond') {
+                    baseEl.type = 'polygon';
+                    baseEl.points = [{x: 50, y: 0}, {x: 100, y: 50}, {x: 50, y: 100}, {x: 0, y: 50}];
+                } else if (type === 'arrow-right') {
+                    baseEl.type = 'polygon';
+                    baseEl.points = [{x: 0, y: 30}, {x: 60, y: 30}, {x: 60, y: 0}, {x: 100, y: 50}, {x: 60, y: 100}, {x: 60, y: 70}, {x: 0, y: 70}];
+                } else if (type === 'arrow-left') {
+                    baseEl.type = 'polygon';
+                    baseEl.points = [{x: 100, y: 30}, {x: 40, y: 30}, {x: 40, y: 0}, {x: 0, y: 50}, {x: 40, y: 100}, {x: 40, y: 70}, {x: 100, y: 70}];
+                } else if (type === 'arrow-up') {
+                    baseEl.type = 'polygon';
+                    baseEl.points = [{x: 30, y: 100}, {x: 30, y: 40}, {x: 0, y: 40}, {x: 50, y: 0}, {x: 100, y: 40}, {x: 70, y: 40}, {x: 70, y: 100}];
+                } else if (type === 'arrow-down') {
+                    baseEl.type = 'polygon';
+                    baseEl.points = [{x: 30, y: 0}, {x: 30, y: 60}, {x: 0, y: 60}, {x: 50, y: 100}, {x: 100, y: 60}, {x: 70, y: 60}, {x: 70, y: 0}];
+                } else if (type === 'cross') {
+                    baseEl.type = 'polygon';
+                    baseEl.points = [{x: 30, y: 0}, {x: 70, y: 0}, {x: 70, y: 30}, {x: 100, y: 30}, {x: 100, y: 70}, {x: 70, y: 70}, {x: 70, y: 100}, {x: 30, y: 100}, {x: 30, y: 70}, {x: 0, y: 70}, {x: 0, y: 30}, {x: 30, y: 30}];
+                } else if (type === 'lightning') {
+                    baseEl.type = 'polygon';
+                    baseEl.points = [{x: 60, y: 0}, {x: 30, y: 50}, {x: 50, y: 50}, {x: 40, y: 100}, {x: 70, y: 50}, {x: 50, y: 50}];
+                } else if (type === 'cloud') {
+                    baseEl.type = 'path';
+                    baseEl.commands = [
+                        { type: 'M', x: 25, y: 60 },
+                        { type: 'C', x1: 25, y1: 50, x2: 15, y2: 40, x: 25, y: 35 },
+                        { type: 'C', x1: 25, y1: 15, x2: 45, y2: 0, x: 60, y: 10 },
+                        { type: 'C', x1: 75, y1: 0, x2: 90, y2: 15, x: 85, y: 35 },
+                        { type: 'C', x1: 95, y1: 40, x2: 95, y2: 50, x: 85, y: 60 },
+                        { type: 'Z' }
+                    ];
+                }
+
                 setElements(prev => [...prev, baseEl]);
                 setSelection(baseEl.id);
                 setIsInspectorOpen(true);
@@ -184,19 +343,136 @@
             };
 
             const updateElement = (id, updates) => {
-                setElements(prev => prev.map(el => el.id === id ? { ...el, ...updates } : el));
+                const updateRecursive = (list) => {
+                    return list.map(el => {
+                        if (el.id === id) return { ...el, ...updates };
+                        if (el.children) return { ...el, children: updateRecursive(el.children) };
+                        return el;
+                    });
+                };
+                setElements(prev => updateRecursive(prev));
             };
 
             const removeElement = (id) => {
-                setElements(prev => prev.filter(el => el.id !== id));
+                const removeRecursive = (list) => {
+                    return list.filter(el => el.id !== id).map(el => {
+                        if (el.children) return { ...el, children: removeRecursive(el.children) };
+                        return el;
+                    });
+                };
+                setElements(prev => removeRecursive(prev));
                 if (selection === id) {
                     setSelection(null);
                     setIsInspectorOpen(false);
                 }
             };
 
+            const findElement = (id, list = elements) => {
+                for (let el of list) {
+                    if (el.id === id) return el;
+                    if (el.children) {
+                        const found = findElement(id, el.children);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            };
+
+            const getBoundingBox = (el) => {
+                if (el.type === 'polygon' && el.points) {
+                    const xs = el.points.map(p => el.x + p.x);
+                    const ys = el.points.map(p => el.y + p.y);
+                    return {
+                        x: Math.min(...xs),
+                        y: Math.min(...ys),
+                        width: Math.max(...xs) - Math.min(...xs),
+                        height: Math.max(...ys) - Math.min(...ys)
+                    };
+                } else if (el.type === 'path' && el.commands) {
+                    const coords = el.commands.filter(c => c.x !== undefined).map(c => ({x: el.x + c.x, y: el.y + c.y}));
+                    const xs = coords.map(p => p.x);
+                    const ys = coords.map(p => p.y);
+                    return {
+                        x: Math.min(...xs),
+                        y: Math.min(...ys),
+                        width: Math.max(...xs) - Math.min(...xs),
+                        height: Math.max(...ys) - Math.min(...ys)
+                    };
+                } else if (el.type === 'line') {
+                    return {
+                        x: Math.min(el.x, el.x2),
+                        y: Math.min(el.y, el.y2),
+                        width: Math.abs(el.x2 - el.x),
+                        height: Math.abs(el.y2 - el.y)
+                    };
+                } else if (el.type === 'circle') {
+                    return { x: el.x, y: el.y, width: el.width, height: el.height };
+                } else {
+                    return { x: el.x, y: el.y, width: el.width || 0, height: el.height || 0 };
+                }
+            };
+
+            const groupSelection = () => {
+                const idsToGroup = multiSelection.length > 0 ? multiSelection : (selection ? [selection] : []);
+                if (idsToGroup.length === 0) return;
+                
+                const elementsToGroup = idsToGroup.map(id => findElement(id)).filter(Boolean);
+                if (elementsToGroup.length === 0) return;
+                
+                // Calculate bounding box using proper bounds
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                elementsToGroup.forEach(el => {
+                    const box = getBoundingBox(el);
+                    minX = Math.min(minX, box.x);
+                    minY = Math.min(minY, box.y);
+                    maxX = Math.max(maxX, box.x + box.width);
+                    maxY = Math.max(maxY, box.y + box.height);
+                });
+                
+                const newGroup = {
+                    id: generateId(),
+                    type: 'group',
+                    x: minX,
+                    y: minY,
+                    width: maxX - minX,
+                    height: maxY - minY,
+                    rotation: 0,
+                    opacity: 1,
+                    scale: {x: 1, y: 1},
+                    locked: false,
+                    animations: [],
+                    children: elementsToGroup.map(el => ({
+                        ...el,
+                        x: el.x - minX,
+                        y: el.y - minY
+                    }))
+                };
+                
+                // Remove grouped elements
+                idsToGroup.forEach(id => removeElement(id));
+                setElements(prev => [...prev, newGroup]);
+                setSelection(newGroup.id);
+                setMultiSelection([]);
+            };
+
+            const ungroupSelection = () => {
+                if (!selection) return;
+                const group = findElement(selection);
+                if (!group || group.type !== 'group') return;
+                
+                const childrenToRelease = group.children.map(child => ({
+                    ...child,
+                    x: group.x + child.x,
+                    y: group.y + child.y
+                }));
+                
+                removeElement(selection);
+                setElements(prev => [...prev, ...childrenToRelease]);
+                setSelection(null);
+            };
+
             const duplicateElement = (id) => {
-                const original = elements.find(e => e.id === id);
+                const original = findElement(id);
                 if (!original) return;
                 const newEl = { ...original, id: generateId(), x: original.x + 20, y: original.y + 20 };
                 setElements(prev => [...prev, newEl]);
@@ -205,8 +481,17 @@
 
             // --- Animation Management ---
 
+            const reorderAnimation = (elId, fromIndex, toIndex) => {
+                const el = findElement(elId);
+                if (!el || !el.animations) return;
+                const newAnimations = [...el.animations];
+                const [removed] = newAnimations.splice(fromIndex, 1);
+                newAnimations.splice(toIndex, 0, removed);
+                updateElement(elId, { animations: newAnimations });
+            };
+
             const addAnimation = (elId) => {
-                const el = elements.find(e => e.id === elId);
+                const el = findElement(elId);
                 if (!el) return;
                 const newAnim = {
                     id: generateId(),
@@ -215,30 +500,33 @@
                     delay: 0,
                     ease: 'ease-out',
                     pathX: 100,
-                    pathY: 0
+                    pathY: 0,
+                    targetColor: el.fill || '#000000',
+                    targetSize: el.fontSize || 20,
+                    props: {} 
                 };
-                updateElement(elId, { animations: [...el.animations, newAnim] });
+                updateElement(elId, { animations: [...(el.animations || []), newAnim] });
             };
 
             const updateAnimation = (elId, animIndex, updates) => {
-                const el = elements.find(e => e.id === elId);
+                const el = findElement(elId);
                 if (!el) return;
-                const newAnims = [...el.animations];
+                const newAnims = [...(el.animations || [])];
                 newAnims[animIndex] = { ...newAnims[animIndex], ...updates };
                 updateElement(elId, { animations: newAnims });
             };
 
             const removeAnimation = (elId, animIndex) => {
-                const el = elements.find(e => e.id === elId);
+                const el = findElement(elId);
                 if (!el) return;
-                const newAnims = el.animations.filter((_, i) => i !== animIndex);
+                const newAnims = (el.animations || []).filter((_, i) => i !== animIndex);
                 updateElement(elId, { animations: newAnims });
             };
 
             const autoSequenceAnimations = () => {
                 let currentTime = 0;
                 const newElements = elements.map(el => {
-                    if (el.animations.length === 0) return el;
+                    if (!el.animations || el.animations.length === 0) return el;
                     
                     const newAnims = el.animations.map(anim => {
                         const updatedAnim = { ...anim, delay: parseFloat(currentTime.toFixed(2)) };
@@ -254,19 +542,291 @@
 
             // --- Interaction Logic ---
 
+            const parseSVGToElements = (svgStr, shouldGroup = true) => {
+                try {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(svgStr, 'image/svg+xml');
+                    
+                    // If grouping, return as a single svg-group element
+                    if (shouldGroup) {
+                        const svgElement = doc.querySelector('svg');
+                        if (svgElement) {
+                            const viewBox = svgElement.getAttribute('viewBox');
+                            let width = parseFloat(svgElement.getAttribute('width')) || 200;
+                            let height = parseFloat(svgElement.getAttribute('height')) || 200;
+                            
+                            // Parse viewBox if exists
+                            if (viewBox) {
+                                const [, , vbW, vbH] = viewBox.split(/\s+/).map(parseFloat);
+                                if (vbW && vbH) {
+                                    width = vbW;
+                                    height = vbH;
+                                }
+                            }
+                            
+                            // Convert SVG to data URL for rendering
+                            const svgBlob = new Blob([svgStr], { type: 'image/svg+xml' });
+                            const svgUrl = URL.createObjectURL(svgBlob);
+                            
+                            return [{
+                                id: generateId(),
+                                type: 'svg-group',
+                                x: 100,
+                                y: 100,
+                                width: Math.min(width, 400),
+                                height: Math.min(height, 400),
+                                svgData: svgUrl,
+                                rawSVG: svgStr,
+                                rotation: 0,
+                                opacity: 1,
+                                locked: false,
+                                animations: []
+                            }];
+                        }
+                    }
+                    
+                    // Otherwise parse into individual elements
+                    const newElements = [];
+                    
+                    // Helper to parse path data into absolute commands
+                    const parsePathData = (d) => {
+                        const commands = [];
+                        const tokens = d.match(/([a-zA-Z]|[-+]?\d*\.?\d+)/g);
+                        if (!tokens) return [];
+
+                        let idx = 0;
+                        let cx = 0, cy = 0; // Current X, Y
+                        let lastCmd = '';
+                        let startX = 0, startY = 0; // For Z
+
+                        const getVal = () => parseFloat(tokens[idx++]);
+
+                        while (idx < tokens.length) {
+                            let char = tokens[idx];
+                            let cmd = char;
+                            
+                            if (!isNaN(parseFloat(char))) {
+                                cmd = lastCmd; // Implicit repetition
+                            } else {
+                                idx++;
+                            }
+
+                            const isRel = cmd === cmd.toLowerCase();
+                            const type = cmd.toUpperCase();
+
+                            switch (type) {
+                                case 'M': {
+                                    const x = getVal() + (isRel ? cx : 0);
+                                    const y = getVal() + (isRel ? cy : 0);
+                                    commands.push({ type: 'M', x, y });
+                                    cx = x; cy = y;
+                                    startX = x; startY = y;
+                                    lastCmd = isRel ? 'l' : 'L'; // M -> L implicit
+                                    break;
+                                }
+                                case 'L': {
+                                    const x = getVal() + (isRel ? cx : 0);
+                                    const y = getVal() + (isRel ? cy : 0);
+                                    commands.push({ type: 'L', x, y });
+                                    cx = x; cy = y;
+                                    lastCmd = cmd;
+                                    break;
+                                }
+                                case 'H': {
+                                    const x = getVal() + (isRel ? cx : 0);
+                                    commands.push({ type: 'L', x, y: cy }); // Convert H to L
+                                    cx = x;
+                                    lastCmd = cmd;
+                                    break;
+                                }
+                                case 'V': {
+                                    const y = getVal() + (isRel ? cy : 0);
+                                    commands.push({ type: 'L', x: cx, y }); // Convert V to L
+                                    cy = y;
+                                    lastCmd = cmd;
+                                    break;
+                                }
+                                case 'C': {
+                                    const x1 = getVal() + (isRel ? cx : 0);
+                                    const y1 = getVal() + (isRel ? cy : 0);
+                                    const x2 = getVal() + (isRel ? cx : 0);
+                                    const y2 = getVal() + (isRel ? cy : 0);
+                                    const x = getVal() + (isRel ? cx : 0);
+                                    const y = getVal() + (isRel ? cy : 0);
+                                    commands.push({ type: 'C', x1, y1, x2, y2, x, y });
+                                    cx = x; cy = y;
+                                    lastCmd = cmd;
+                                    break;
+                                }
+                                case 'Q': {
+                                    const x1 = getVal() + (isRel ? cx : 0);
+                                    const y1 = getVal() + (isRel ? cy : 0);
+                                    const x = getVal() + (isRel ? cx : 0);
+                                    const y = getVal() + (isRel ? cy : 0);
+                                    commands.push({ type: 'Q', x1, y1, x, y });
+                                    cx = x; cy = y;
+                                    lastCmd = cmd;
+                                    break;
+                                }
+                                case 'S': { // Smooth Cubic
+                                    // Reflection of last control point
+                                    let x1 = cx, y1 = cy;
+                                    const last = commands[commands.length-1];
+                                    if (last && (last.type === 'C' || last.type === 'S')) {
+                                        x1 = cx + (cx - last.x2);
+                                        y1 = cy + (cy - last.y2);
+                                    }
+                                    const x2 = getVal() + (isRel ? cx : 0);
+                                    const y2 = getVal() + (isRel ? cy : 0);
+                                    const x = getVal() + (isRel ? cx : 0);
+                                    const y = getVal() + (isRel ? cy : 0);
+                                    commands.push({ type: 'C', x1, y1, x2, y2, x, y }); // Convert S to C
+                                    cx = x; cy = y;
+                                    lastCmd = cmd;
+                                    break;
+                                }
+                                case 'Z': {
+                                    commands.push({ type: 'Z' });
+                                    cx = startX; cy = startY;
+                                    lastCmd = cmd;
+                                    break;
+                                }
+                                default:
+                                    // Skip unsupported for now or just consume args if we knew how many
+                                    // For safety, if we hit unknown, we might break or skip
+                                    break;
+                            }
+                        }
+                        return commands;
+                    };
+
+                    // Process all elements
+                    const processNode = (node) => {
+                        if (node.tagName === 'path') {
+                            const d = node.getAttribute('d');
+                            if (d) {
+                                const commands = parsePathData(d);
+                                if (commands.length > 0) {
+                                    // Calculate bounds
+                                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                                    commands.forEach(c => {
+                                        if (c.x !== undefined) { minX = Math.min(minX, c.x); maxX = Math.max(maxX, c.x); }
+                                        if (c.y !== undefined) { minY = Math.min(minY, c.y); maxY = Math.max(maxY, c.y); }
+                                        if (c.x1 !== undefined) { minX = Math.min(minX, c.x1); maxX = Math.max(maxX, c.x1); }
+                                        if (c.y1 !== undefined) { minY = Math.min(minY, c.y1); maxY = Math.max(maxY, c.y1); }
+                                        if (c.x2 !== undefined) { minX = Math.min(minX, c.x2); maxX = Math.max(maxX, c.x2); }
+                                        if (c.y2 !== undefined) { minY = Math.min(minY, c.y2); maxY = Math.max(maxY, c.y2); }
+                                    });
+                                    
+                                    // Normalize to 0,0
+                                    const normalizedCommands = commands.map(c => {
+                                        const nc = { ...c };
+                                        if (nc.x !== undefined) nc.x -= minX;
+                                        if (nc.y !== undefined) nc.y -= minY;
+                                        if (nc.x1 !== undefined) nc.x1 -= minX;
+                                        if (nc.y1 !== undefined) nc.y1 -= minY;
+                                        if (nc.x2 !== undefined) nc.x2 -= minX;
+                                        if (nc.y2 !== undefined) nc.y2 -= minY;
+                                        return nc;
+                                    });
+
+                                    newElements.push({
+                                        id: generateId(),
+                                        type: 'path',
+                                        x: minX,
+                                        y: minY,
+                                        width: maxX - minX,
+                                        height: maxY - minY,
+                                        commands: normalizedCommands,
+                                        fill: node.getAttribute('fill') || '#000000',
+                                        stroke: node.getAttribute('stroke') || 'none',
+                                        strokeWidth: parseFloat(node.getAttribute('stroke-width')) || 0,
+                                        rotation: 0,
+                                        opacity: parseFloat(node.getAttribute('opacity')) || 1,
+                                        scale: {x: 1, y: 1},
+                                        locked: false,
+                                        animations: []
+                                    });
+                                }
+                            }
+                        } else if (node.tagName === 'rect') {
+                            newElements.push({
+                                id: generateId(),
+                                type: 'rect',
+                                x: parseFloat(node.getAttribute('x')) || 0,
+                                y: parseFloat(node.getAttribute('y')) || 0,
+                                width: parseFloat(node.getAttribute('width')) || 0,
+                                height: parseFloat(node.getAttribute('height')) || 0,
+                                fill: node.getAttribute('fill') || '#000000',
+                                stroke: node.getAttribute('stroke') || 'none',
+                                strokeWidth: parseFloat(node.getAttribute('stroke-width')) || 0,
+                                rotation: 0,
+                                opacity: 1,
+                                locked: false,
+                                animations: []
+                            });
+                        } else if (node.tagName === 'circle') {
+                            const r = parseFloat(node.getAttribute('r')) || 0;
+                            newElements.push({
+                                id: generateId(),
+                                type: 'circle',
+                                x: (parseFloat(node.getAttribute('cx')) || 0) - r,
+                                y: (parseFloat(node.getAttribute('cy')) || 0) - r,
+                                width: r * 2,
+                                height: r * 2,
+                                fill: node.getAttribute('fill') || '#000000',
+                                stroke: node.getAttribute('stroke') || 'none',
+                                strokeWidth: parseFloat(node.getAttribute('stroke-width')) || 0,
+                                rotation: 0,
+                                opacity: 1,
+                                locked: false,
+                                animations: []
+                            });
+                        }
+                        // Recurse for groups
+                        if (node.children) {
+                            Array.from(node.children).forEach(processNode);
+                        }
+                    };
+
+                    Array.from(doc.children).forEach(processNode);
+                    return newElements;
+                } catch (e) {
+                    console.error("Error parsing SVG:", e);
+                    return [];
+                }
+            };
+
             const handleDrop = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 const file = e.dataTransfer.files[0];
-                if (file && file.type === "image/svg+xml") {
+                if (!file) return;
+
+                if (file.type === "image/svg+xml") {
                     const reader = new FileReader();
                     reader.onload = (event) => {
-                        addElement('image', {
-                            href: event.target.result,
-                            width: 200,
-                            height: 200,
-                            fill: 'transparent'
-                        });
+                        const svgData = event.target.result;
+                        try {
+                            const base64 = svgData.split(',')[1];
+                            const svgContent = decodeURIComponent(escape(window.atob(base64)));
+                            const els = parseSVGToElements(svgContent, true); // Group by default
+                            setElements(prev => [...prev, ...els]);
+                        } catch (err) {
+                            console.error("SVG parsing error:", err);
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                } else if (file.type.startsWith("image/")) {
+                    setIsProcessingImage(true);
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const imgData = event.target.result;
+                        ImageTracer.imageToSVG(imgData, (svgStr) => {
+                            const els = parseSVGToElements(svgStr, true); // Group by default
+                            setElements(prev => [...prev, ...els]);
+                            setIsProcessingImage(false);
+                        }, { ltres: 0.01, qtres: 0.01, pathomit: 1, scale: 2, strokewidth: 0, viewbox: true }); 
                     };
                     reader.readAsDataURL(file);
                 }
@@ -274,16 +834,68 @@
 
             const handleDragOver = (e) => e.preventDefault();
 
+            const findRootElement = (id) => {
+                const findInTree = (list) => {
+                    for (let el of list) {
+                        if (el.id === id) return true;
+                        if (el.children && findInTree(el.children)) return true;
+                    }
+                    return false;
+                };
+                
+                for (let el of elements) {
+                    if (el.id === id) return el;
+                    if (el.children && findInTree(el.children)) return el;
+                }
+                return null;
+            };
+
             const handlePointerDown = (e, id, action = 'move', payload = null) => {
                 e.stopPropagation(); 
                 if (tool !== 'select' && !id) return;
                 if (e.button === 1 || tool === 'hand') return; 
 
                 if (id) {
-                    setSelection(id);
+                    let targetId = id;
+                    const rootEl = findRootElement(id);
+                    
+                    // Group Selection Logic
+                    if (rootEl && rootEl.id !== id) {
+                        if (selection === rootEl.id) {
+                            // Already selected group, select child
+                            targetId = id;
+                        } else {
+                            // Select group first
+                            targetId = rootEl.id;
+                        }
+                    }
+
+                    // Multi-select with Ctrl/Cmd
+                    if (e.ctrlKey || e.metaKey) {
+                        if (multiSelection.includes(targetId)) {
+                            setMultiSelection(prev => prev.filter(i => i !== targetId));
+                        } else {
+                            setMultiSelection(prev => [...prev, targetId]);
+                        }
+                        return;
+                    } else {
+                        setMultiSelection([]);
+                    }
+
+                    setSelection(targetId);
                     setIsInspectorOpen(true);
-                    const el = elements.find(e => e.id === id);
-                    if (el.locked) return;
+                    const el = findElement(targetId);
+                    if (!el || el.locked) return;
+                    
+                    // Path editing logic
+                    if (action === 'path-point') {
+                        setIsDragging(true);
+                        setDragAction('path-point');
+                        const pos = getPointerPos(e);
+                        dragStartRef.current = { startMouse: pos, elState: JSON.parse(JSON.stringify(el)), payload }; // payload is point index
+                        return;
+                    }
+
                     setIsDragging(true);
                     setDragAction(action);
                     const pos = getPointerPos(e);
@@ -291,6 +903,7 @@
                 } else {
                     setSelection(null);
                     setIsInspectorOpen(false);
+                    setEditMode(false);
                 }
             };
 
@@ -311,9 +924,86 @@
                         updateElement(selection, { x: elState.x + dx, y: elState.y + dy });
                     }
                 } 
+                else if (dragAction === 'path-point') {
+                    // Update specific point in polygon/path
+                    const el = findElement(selection);
+                    
+                    if (el.type === 'path') {
+                        const { idx, type } = payload;
+                        const newCommands = [...el.commands];
+                        const cmd = { ...newCommands[idx] };
+                        
+                        if (type === 'main') {
+                            cmd.x = elState.commands[idx].x + dx;
+                            cmd.y = elState.commands[idx].y + dy;
+                        } else if (type === 'c1') {
+                            cmd.x1 = elState.commands[idx].x1 + dx;
+                            cmd.y1 = elState.commands[idx].y1 + dy;
+                        } else if (type === 'c2') {
+                            cmd.x2 = elState.commands[idx].x2 + dx;
+                            cmd.y2 = elState.commands[idx].y2 + dy;
+                        }
+                        
+                        newCommands[idx] = cmd;
+                        updateElement(selection, { commands: newCommands });
+                    }
+                    else if (el.points) {
+                        const pointIndex = payload; // For polygon, payload is just index
+                        if (el.points[pointIndex]) {
+                            const newPoints = [...el.points];
+                            newPoints[pointIndex] = { x: elState.points[pointIndex].x + dx, y: elState.points[pointIndex].y + dy };
+                            updateElement(selection, { points: newPoints });
+                        }
+                    }
+                }
+                else if (dragAction === 'rotate') {
+                    const el = findElement(selection);
+                    const bbox = getBoundingBox(elState);
+                    const centerX = bbox.x + bbox.width / 2;
+                    const centerY = bbox.y + bbox.height / 2;
+                    const angle = Math.atan2(currentMouse.y - centerY, currentMouse.x - centerX) * 180 / Math.PI + 90;
+                    updateElement(selection, { rotation: angle });
+                }
                 else if (dragAction.startsWith('resize')) {
+                    const el = findElement(selection);
+                    const bbox = getBoundingBox(elState);
                     let { x, y, width, height, fontSize } = elState;
                     let newX = x, newY = y, newW = width, newH = height;
+
+                    // For polygon/path, use bbox for calculations
+                    if (elState.type === 'polygon' || elState.type === 'path') {
+                        const bboxX = bbox.x, bboxY = bbox.y, bboxW = bbox.width, bboxH = bbox.height;
+                        let newBboxX = bboxX, newBboxY = bboxY, newBboxW = bboxW, newBboxH = bboxH;
+
+                        if (dragAction.includes('e')) newBboxW = bboxW + dx;
+                        if (dragAction.includes('w')) { newBboxX = bboxX + dx; newBboxW = bboxW - dx; }
+                        if (dragAction.includes('s')) newBboxH = bboxH + dy;
+                        if (dragAction.includes('n')) { newBboxY = bboxY + dy; newBboxH = bboxH - dy; }
+
+                        const scaleX = newBboxW / bboxW;
+                        const scaleY = newBboxH / bboxH;
+
+                        if (elState.type === 'polygon' && elState.points) {
+                            const newPoints = elState.points.map(p => ({
+                                x: (p.x - (bboxX - elState.x)) * scaleX + (newBboxX - elState.x),
+                                y: (p.y - (bboxY - elState.y)) * scaleY + (newBboxY - elState.y)
+                            }));
+                            updateElement(selection, { points: newPoints });
+                        } else if (elState.type === 'path' && elState.commands) {
+                            const newCommands = elState.commands.map(cmd => {
+                                const newCmd = { ...cmd };
+                                if (cmd.x !== undefined) newCmd.x = (cmd.x - (bboxX - elState.x)) * scaleX + (newBboxX - elState.x);
+                                if (cmd.y !== undefined) newCmd.y = (cmd.y - (bboxY - elState.y)) * scaleY + (newBboxY - elState.y);
+                                if (cmd.x1 !== undefined) newCmd.x1 = (cmd.x1 - (bboxX - elState.x)) * scaleX + (newBboxX - elState.x);
+                                if (cmd.y1 !== undefined) newCmd.y1 = (cmd.y1 - (bboxY - elState.y)) * scaleY + (newBboxY - elState.y);
+                                if (cmd.x2 !== undefined) newCmd.x2 = (cmd.x2 - (bboxX - elState.x)) * scaleX + (newBboxX - elState.x);
+                                if (cmd.y2 !== undefined) newCmd.y2 = (cmd.y2 - (bboxY - elState.y)) * scaleY + (newBboxY - elState.y);
+                                return newCmd;
+                            });
+                            updateElement(selection, { commands: newCommands });
+                        }
+                        return;
+                    }
 
                     if (dragAction.includes('e')) newW = width + dx;
                     if (dragAction.includes('w')) { newX = x + dx; newW = width - dx; }
@@ -348,7 +1038,7 @@
             const handlePointerUp = () => { setIsDragging(false); setDragAction(null); };
 
             const handleTextDoubleClick = (id) => {
-                const el = elements.find(e => e.id === id);
+                const el = findElement(id);
                 if (!el) return;
                 const newText = prompt("Edit Text:", el.text);
                 if (newText !== null) {
@@ -360,17 +1050,89 @@
                 if (!svgRef.current) return;
                 const clone = svgRef.current.cloneNode(true);
                 clone.querySelectorAll('.ui-layer').forEach(el => el.remove());
-                const style = document.createElement('style');
                 
+                // Generate all keyframes
                 const dynamicKeyframes = elements.flatMap(el => 
-                    el.animations.map((anim, idx) => {
+                    (el.animations || []).map((anim, idx) => {
                         if(anim.type === 'move') {
                             return `@keyframes move-${el.id}-${idx} { to { transform: translate(${anim.pathX}px, ${anim.pathY}px); } }`;
+                        }
+                        if (anim.type === 'morph') {
+                            return `@keyframes morph-${el.id}-${idx} { 0% { transform: scale(1); } 50% { transform: scale(1.1) rotate(5deg); } 100% { transform: scale(1); } }`;
+                        }
+                        if (anim.type === 'color') {
+                            const targetColor = anim.targetColor || '#ff0000';
+                            const startColor = el.fill || '#000000';
+                            if (el.fillType === 'gradient') {
+                                return `@keyframes color-${el.id}-${idx} { from { opacity: 1; } to { opacity: 1; filter: hue-rotate(${anim.hueRotate || 180}deg) saturate(${anim.saturate || 1.5}); } }`;
+                            }
+                            return `@keyframes color-${el.id}-${idx} { from { fill: ${startColor}; } to { fill: ${targetColor}; } }`;
+                        }
+                        if (anim.type === 'textSize' && el.type === 'text') {
+                            const startSize = el.fontSize || 24;
+                            const targetSize = anim.targetSize || 40;
+                            return `@keyframes textSize-${el.id}-${idx} { from { font-size: ${startSize}px; } to { font-size: ${targetSize}px; } }`;
                         }
                         return '';
                     })
                 ).join('\n');
 
+                // Apply animations to elements
+                const applyAnimationsToExport = (el, svgEl) => {
+                    if (!el.animations || el.animations.length === 0) return;
+                    
+                    const animationStrings = el.animations.map((anim, idx) => {
+                        const preset = ANIMATION_PRESETS.find(a => a.id === anim.type);
+                        if (!preset) return '';
+                        
+                        const timing = `${anim.duration}s ${anim.ease || 'ease-out'} ${anim.delay}s`;
+                        let cssPart = preset.css.match(/animation:\s*([^;]+);/)?.[1] || '';
+                        
+                        cssPart = cssPart.replace('{t}', timing);
+                        if (anim.type === 'move' || anim.type === 'morph' || anim.type === 'color' || anim.type === 'textSize') {
+                            cssPart = cssPart.replace('{id}', el.id).replace('{idx}', idx);
+                        }
+                        return cssPart;
+                    }).filter(Boolean);
+
+                    if (animationStrings.length > 0) {
+                        const currentStyle = svgEl.getAttribute('style') || '';
+                        const animStyle = `animation: ${animationStrings.join(', ')};`;
+                        
+                        // Apply initial state for entrance animations
+                        let initialStyles = '';
+                        el.animations.forEach((anim) => {
+                            const preset = ANIMATION_PRESETS.find(a => a.id === anim.type);
+                            if (preset) {
+                                if (preset.css.includes('opacity: 0')) {
+                                    initialStyles += 'opacity: 0; ';
+                                }
+                                if (preset.css.includes('transform:') && !anim.type.includes('move') && !anim.type.includes('morph')) {
+                                    const transformMatch = preset.css.match(/transform:\s*([^;]+);/);
+                                    if (transformMatch) {
+                                        initialStyles += `transform: ${transformMatch[1]}; `;
+                                    }
+                                }
+                            }
+                        });
+                        
+                        svgEl.setAttribute('style', currentStyle + ' ' + initialStyles + animStyle);
+                    }
+                };
+
+                // Apply animations to elements in exported SVG
+                elements.forEach(el => {
+                    if (!el.animations || el.animations.length === 0) return;
+                    
+                    // Find element by data-element-id attribute
+                    const svgElements = clone.querySelectorAll(`[data-element-id="${el.id}"]`);
+                    
+                    svgElements.forEach(svgEl => {
+                        applyAnimationsToExport(el, svgEl);
+                    });
+                });
+                
+                const style = document.createElement('style');
                 style.textContent = GLOBAL_STYLES + '\n' + dynamicKeyframes;
                 clone.prepend(style);
                 
@@ -385,6 +1147,36 @@
                 a.href = url;
                 a.download = 'canvas-studio-export.svg';
                 a.click();
+            };
+
+            const handleSaveProject = () => {
+                const projectData = {
+                    version: '1.0',
+                    elements,
+                    view
+                };
+                const blob = new Blob([JSON.stringify(projectData)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'canvas-studio-project.json';
+                a.click();
+            };
+
+            const handleLoadProject = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const projectData = JSON.parse(event.target.result);
+                        if (projectData.elements) setElements(projectData.elements);
+                        if (projectData.view) setView(projectData.view);
+                    } catch (err) {
+                        alert("Invalid project file");
+                    }
+                };
+                reader.readAsText(file);
             };
 
             const handleWheel = (e) => {
@@ -409,16 +1201,16 @@
                     touchAction: 'none' 
                 };
 
-                if (isPlaying && el.animations.length > 0) {
+                if (isPlaying && el.animations && el.animations.length > 0) {
                     const animationStrings = el.animations.map((anim, idx) => {
                         const preset = ANIMATION_PRESETS.find(a => a.id === anim.type);
                         if (!preset) return '';
                         
-                        const timing = `${anim.duration}s ${anim.ease} ${anim.delay}s`;
+                        const timing = `${anim.duration}s ${anim.ease || 'ease'} ${anim.delay}s`;
                         let cssPart = preset.css.match(/animation:\s*([^;]+);/)?.[1] || '';
                         
                         cssPart = cssPart.replace('{t}', timing);
-                        if (anim.type === 'move') {
+                        if (anim.type === 'move' || anim.type === 'morph' || anim.type === 'color' || anim.type === 'textSize') {
                             cssPart = cssPart.replace('{id}', el.id).replace('{idx}', idx);
                         }
                         return cssPart;
@@ -427,6 +1219,20 @@
                     if (animationStrings.length > 0) {
                         style.animation = animationStrings.join(', ');
                     }
+                    
+                    // Apply animation-specific inline styles
+                    el.animations.forEach((anim, idx) => {
+                        const preset = ANIMATION_PRESETS.find(a => a.id === anim.type);
+                        if (preset && preset.css.includes('opacity: 0')) {
+                            style.opacity = 0; // Start invisible for entrance animations
+                        }
+                        if (preset && preset.css.includes('transform:')) {
+                            const transformMatch = preset.css.match(/transform:\s*([^;]+);/);
+                            if (transformMatch && !anim.type.includes('move') && !anim.type.includes('morph')) {
+                                style.transform = transformMatch[1]; // Apply initial transform
+                            }
+                        }
+                    });
                 }
 
                 const fill = el.fillType === 'gradient' ? `url(#grad-${el.id})` : el.fill;
@@ -440,12 +1246,69 @@
                 const common = {
                     fill, filter, stroke: el.stroke, strokeWidth: el.strokeWidth, strokeDasharray: el.strokeDash,
                     ...eventHandlers,
-                    style, className: "canvas-obj"
+                    style, className: "canvas-obj",
+                    'data-element-id': el.id
                 };
+
+                // Group Rendering
+                if (el.type === 'group') {
+                    return (
+                        <g key={el.id} style={style} data-element-id={el.id} transform={`translate(${el.x},${el.y}) rotate(${el.rotation || 0}) scale(${el.scale?.x || 1}, ${el.scale?.y || 1})`} {...eventHandlers}>
+                            {el.children && el.children.map(child => renderElement(child))}
+                        </g>
+                    );
+                }
+
+                // SVG Template Rendering
+                if (el.type === 'svg-template') {
+                    return (
+                        <g key={el.id} style={style} data-element-id={el.id} {...eventHandlers}>
+                            <g transform={`translate(${el.x},${el.y}) scale(${el.width/100},${el.height/100})`} dangerouslySetInnerHTML={{__html: el.templateSvg}} />
+                        </g>
+                    );
+                }
+
+                // Path Rendering (Editable)
+                if (el.type === 'path') {
+                    const d = el.commands.map(c => {
+                        if (c.type === 'M') return `M ${c.x} ${c.y}`;
+                        if (c.type === 'L') return `L ${c.x} ${c.y}`;
+                        if (c.type === 'C') return `C ${c.x1} ${c.y1}, ${c.x2} ${c.y2}, ${c.x} ${c.y}`;
+                        if (c.type === 'Q') return `Q ${c.x1} ${c.y1}, ${c.x} ${c.y}`;
+                        if (c.type === 'Z') return 'Z';
+                        return '';
+                    }).join(' ');
+                    const bbox = getBoundingBox(el);
+                    return (
+                        <g key={el.id} data-element-id={el.id} transform={`translate(${el.x},${el.y}) rotate(${el.rotation || 0} ${bbox.width/2} ${bbox.height/2})`}>
+                            <path d={d} {...common} />
+                        </g>
+                    );
+                }
+
+                // Polygon Rendering (Editable)
+                if (el.type === 'polygon') {
+                    const pointsStr = el.points.map(p => `${p.x},${p.y}`).join(' ');
+                    const bbox = getBoundingBox(el);
+                    return (
+                        <g key={el.id} data-element-id={el.id} transform={`translate(${el.x},${el.y}) rotate(${el.rotation || 0} ${bbox.width/2} ${bbox.height/2})`}>
+                            <polygon points={pointsStr} {...common} />
+                        </g>
+                    );
+                }
+
+                // SVG Group Rendering (imported SVG) - Now properly transformable
+                if (el.type === 'svg-group') {
+                    return (
+                        <g key={el.id} style={style} data-element-id={el.id} transform={`translate(${el.x + el.width/2},${el.y + el.height/2}) rotate(${el.rotation || 0}) scale(${el.scale?.x || 1}, ${el.scale?.y || 1})`} {...eventHandlers}>
+                            <image href={el.svgData} x={-el.width/2} y={-el.height/2} width={el.width} height={el.height} preserveAspectRatio="none" fill={fill} filter={filter} stroke={el.stroke} strokeWidth={el.strokeWidth} />
+                        </g>
+                    );
+                }
 
                 if (el.type === 'line') {
                     return (
-                        <g key={el.id} className="canvas-obj" style={style}>
+                        <g key={el.id} className="canvas-obj" style={style} data-element-id={el.id}>
                             <line x1={el.x} y1={el.y} x2={el.x2} y2={el.y2} stroke={el.stroke} strokeWidth={el.strokeWidth} strokeDasharray={el.strokeDash} markerEnd={el.markerEnd === 'arrow' ? 'url(#arrow)' : ''} {...eventHandlers} />
                             <line x1={el.x} y1={el.y} x2={el.x2} y2={el.y2} stroke="transparent" strokeWidth="20" {...eventHandlers} />
                         </g>
@@ -467,20 +1330,96 @@
                     );
                 }
                 if (el.type === 'circle') {
-                    return <circle key={el.id} cx={el.x + el.width/2} cy={el.y + el.height/2} r={el.width/2} {...common} />;
+                    return (
+                        <g key={el.id} style={style} data-element-id={el.id} transform={`rotate(${el.rotation || 0} ${el.x + el.width/2} ${el.y + el.height/2})`} {...eventHandlers}>
+                            <circle cx={el.x + el.width/2} cy={el.y + el.height/2} r={el.width/2} fill={fill} filter={filter} stroke={el.stroke} strokeWidth={el.strokeWidth} strokeDasharray={el.strokeDash} className="canvas-obj" />
+                        </g>
+                    );
                 }
-                return <rect key={el.id} x={el.x} y={el.y} width={el.width} height={el.height} rx={el.borderRadius} {...common} />;
+                return (
+                    <g key={el.id} style={style} data-element-id={el.id} transform={`rotate(${el.rotation || 0} ${el.x + el.width/2} ${el.y + el.height/2})`} {...eventHandlers}>
+                        <rect x={el.x} y={el.y} width={el.width} height={el.height} rx={el.borderRadius} fill={fill} filter={filter} stroke={el.stroke} strokeWidth={el.strokeWidth} strokeDasharray={el.strokeDash} className="canvas-obj" />
+                    </g>
+                );
             };
 
             const renderTransformGizmo = () => {
                 if (!selection || isPlaying) return null;
-                const el = elements.find(e => e.id === selection);
+                const el = findElement(selection);
                 if (!el || el.locked) return null;
 
                 const handleSize = 10 / view.zoom; 
                 const borderSize = 2 / view.zoom;
 
-                const pathGizmos = el.animations.map((anim, idx) => {
+                // Path Editing Gizmos
+                if (editMode && el.type === 'path') {
+                    return (
+                        <g className="ui-layer">
+                            {el.commands.map((cmd, i) => {
+                                const handles = [];
+                                // Main point
+                                if (cmd.x !== undefined && cmd.y !== undefined) {
+                                    handles.push(
+                                        <circle key={`p-${i}`} cx={el.x + cmd.x} cy={el.y + cmd.y} r={handleSize * 0.8} fill="#fff" stroke="#ec4899" strokeWidth={borderSize} className="cursor-crosshair"
+                                            onMouseDown={(e) => handlePointerDown(e, el.id, 'path-point', { idx: i, type: 'main' })}
+                                            onTouchStart={(e) => handlePointerDown(e, el.id, 'path-point', { idx: i, type: 'main' })}
+                                        />
+                                    );
+                                }
+                                // Control points for C
+                                if (cmd.type === 'C') {
+                                    handles.push(
+                                        <line key={`l1-${i}`} x1={el.x + cmd.x1} y1={el.y + cmd.y1} x2={el.commands[i-1]?.x !== undefined ? el.x + el.commands[i-1].x : el.x + cmd.x1} y2={el.commands[i-1]?.y !== undefined ? el.y + el.commands[i-1].y : el.y + cmd.y1} stroke="#ec4899" strokeWidth={1} strokeDasharray="2,2" />,
+                                        <circle key={`c1-${i}`} cx={el.x + cmd.x1} cy={el.y + cmd.y1} r={handleSize * 0.6} fill="#ec4899" className="cursor-crosshair"
+                                            onMouseDown={(e) => handlePointerDown(e, el.id, 'path-point', { idx: i, type: 'c1' })}
+                                            onTouchStart={(e) => handlePointerDown(e, el.id, 'path-point', { idx: i, type: 'c1' })}
+                                        />,
+                                        <line key={`l2-${i}`} x1={el.x + cmd.x2} y1={el.y + cmd.y2} x2={el.x + cmd.x} y2={el.y + cmd.y} stroke="#ec4899" strokeWidth={1} strokeDasharray="2,2" />,
+                                        <circle key={`c2-${i}`} cx={el.x + cmd.x2} cy={el.y + cmd.y2} r={handleSize * 0.6} fill="#ec4899" className="cursor-crosshair"
+                                            onMouseDown={(e) => handlePointerDown(e, el.id, 'path-point', { idx: i, type: 'c2' })}
+                                            onTouchStart={(e) => handlePointerDown(e, el.id, 'path-point', { idx: i, type: 'c2' })}
+                                        />
+                                    );
+                                }
+                                // Control points for Q
+                                if (cmd.type === 'Q') {
+                                    handles.push(
+                                        <line key={`lq-${i}`} x1={el.x + cmd.x1} y1={el.y + cmd.y1} x2={el.x + cmd.x} y2={el.y + cmd.y} stroke="#ec4899" strokeWidth={1} strokeDasharray="2,2" />,
+                                        <circle key={`cq-${i}`} cx={el.x + cmd.x1} cy={el.y + cmd.y1} r={handleSize * 0.6} fill="#ec4899" className="cursor-crosshair"
+                                            onMouseDown={(e) => handlePointerDown(e, el.id, 'path-point', { idx: i, type: 'c1' })}
+                                            onTouchStart={(e) => handlePointerDown(e, el.id, 'path-point', { idx: i, type: 'c1' })}
+                                        />
+                                    );
+                                }
+                                return handles;
+                            })}
+                        </g>
+                    );
+                }
+
+                // Path Editing Gizmos (Polygon)
+                if (editMode && el.points) {
+                    return (
+                        <g className="ui-layer">
+                            {el.points.map((pt, i) => (
+                                <circle 
+                                    key={i} 
+                                    cx={el.x + pt.x} 
+                                    cy={el.y + pt.y} 
+                                    r={handleSize * 0.8} 
+                                    fill="#fff" 
+                                    stroke="#ec4899" 
+                                    strokeWidth={borderSize} 
+                                    className="cursor-crosshair"
+                                    onMouseDown={(e) => handlePointerDown(e, el.id, 'path-point', i)}
+                                    onTouchStart={(e) => handlePointerDown(e, el.id, 'path-point', i)}
+                                />
+                            ))}
+                        </g>
+                    );
+                }
+
+                const pathGizmos = (el.animations || []).map((anim, idx) => {
                     if (anim.type !== 'move') return null;
                     return (
                         <g className="ui-layer" key={idx}>
@@ -505,47 +1444,151 @@
                         </g>
                     );
                 }
+                // Get proper bounding box for all element types
+                const bbox = getBoundingBox(el);
+                
                 return (
                     <g className="ui-layer">
                         {pathGizmos}
-                        <rect x={el.x} y={el.y} width={el.width} height={el.height} fill="none" stroke="#2563eb" strokeWidth={borderSize} strokeDasharray={4/view.zoom} pointerEvents="none"/>
-                        <rect x={el.x - handleSize} y={el.y - handleSize} width={handleSize*2} height={handleSize*2} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-nwse-resize" {...handlers('resize-nw')} />
-                        <rect x={el.x + el.width - handleSize} y={el.y - handleSize} width={handleSize*2} height={handleSize*2} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-nesw-resize" {...handlers('resize-ne')} />
-                        <rect x={el.x - handleSize} y={el.y + el.height - handleSize} width={handleSize*2} height={handleSize*2} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-nesw-resize" {...handlers('resize-sw')} />
-                        <rect x={el.x + el.width - handleSize} y={el.y + el.height - handleSize} width={handleSize*2} height={handleSize*2} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-nwse-resize" {...handlers('resize-se')} />
+                        <rect x={bbox.x} y={bbox.y} width={bbox.width} height={bbox.height} fill="none" stroke="#2563eb" strokeWidth={borderSize} strokeDasharray={4/view.zoom} pointerEvents="none"/>
+                        <rect x={bbox.x - handleSize} y={bbox.y - handleSize} width={handleSize*2} height={handleSize*2} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-nwse-resize" {...handlers('resize-nw')} />
+                        <rect x={bbox.x + bbox.width - handleSize} y={bbox.y - handleSize} width={handleSize*2} height={handleSize*2} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-nesw-resize" {...handlers('resize-ne')} />
+                        <rect x={bbox.x - handleSize} y={bbox.y + bbox.height - handleSize} width={handleSize*2} height={handleSize*2} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-nesw-resize" {...handlers('resize-sw')} />
+                        <rect x={bbox.x + bbox.width - handleSize} y={bbox.y + bbox.height - handleSize} width={handleSize*2} height={handleSize*2} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-nwse-resize" {...handlers('resize-se')} />
+                        
+                        {/* Multi-selection overlays */}
+                        {multiSelection.map(id => {
+                            const multiEl = findElement(id);
+                            if (!multiEl || multiEl.id === el.id) return null;
+                            const multiBbox = getBoundingBox(multiEl);
+                            return <rect key={id} x={multiBbox.x} y={multiBbox.y} width={multiBbox.width} height={multiBbox.height} fill="none" stroke="#a855f7" strokeWidth={borderSize} strokeDasharray={4/view.zoom} pointerEvents="none"/>;
+                        })}
+                        
+                        {/* Rotation handle */}
+                        <line x1={bbox.x + bbox.width/2} y1={bbox.y} x2={bbox.x + bbox.width/2} y2={bbox.y - 20/view.zoom} stroke="#2563eb" strokeWidth={borderSize} strokeDasharray={2/view.zoom} pointerEvents="none"/>
+                        <circle cx={bbox.x + bbox.width/2} cy={bbox.y - 20/view.zoom} r={handleSize} fill="white" stroke="#2563eb" strokeWidth={borderSize} className="cursor-grab" {...handlers('rotate')} />
                     </g>
                 );
             };
 
-            const selectedEl = elements.find(e => e.id === selection);
+            const selectedEl = findElement(selection);
             const categories = [...new Set(ANIMATION_PRESETS.map(a => a.category))];
 
             return (
-                <div className="flex h-screen bg-[#f1f5f9] text-slate-800 font-sans overflow-hidden flex-col md:flex-row">
+                <div className="flex h-screen bg-slate-900 text-slate-800 font-sans overflow-hidden flex-col md:flex-row">
                     
+                    {/* Loading Overlay */}
+                    {isProcessingImage && (
+                        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center">
+                            <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                            <h3 className="text-xl font-bold text-white">Vectorizing Image...</h3>
+                            <p className="text-slate-400 text-sm">This might take a moment</p>
+                        </div>
+                    )}
+
                     {/* Intro */}
                     {showIntro && (
-                        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-                            <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-300">
-                                <div className="grid md:grid-cols-2">
-                                    <div className="bg-indigo-600 p-8 text-white flex flex-col justify-center">
-                                        <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mb-6"><Sparkles size={32} /></div>
-                                        <h2 className="text-3xl font-bold mb-4">Canvas Studio</h2>
-                                        <p className="text-indigo-100 text-lg leading-relaxed">Pro SVG animations with Timeline Sequencing.</p>
+                        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-lg flex items-center justify-center p-4">
+                            <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden border border-purple-500/30">
+                                <div className="grid md:grid-cols-3 gap-6 p-8">
+                                    <div className="md:col-span-1 flex flex-col justify-center">
+                                        <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-purple-500/50"><Sparkles size={32} className="text-white" /></div>
+                                        <h2 className="text-3xl font-bold mb-2 bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent">Studio Pro</h2>
+                                        <p className="text-purple-200 text-sm leading-relaxed">Advanced SVG Design & Animation Engine</p>
                                     </div>
-                                    <div className="p-8 flex flex-col justify-center bg-white">
-                                        <h3 className="font-bold text-slate-800 text-lg mb-6">Features:</h3>
-                                        <div className="space-y-4 mb-6">
-                                            <div className="flex gap-3 items-start">
-                                                <div className="bg-amber-100 p-2 rounded-lg text-amber-600 shrink-0"><Clock size={18}/></div>
-                                                <div><h4 className="font-semibold text-slate-900 text-sm">Sequence Animations</h4><p className="text-xs text-slate-500">Auto-order animations easily.</p></div>
+                                    <div className="md:col-span-2 space-y-4">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="bg-gradient-to-br from-blue-500/20 to-cyan-500/20 p-4 rounded-lg border border-blue-400/30">
+                                                <div className="text-blue-300 text-xs font-bold mb-1">✨ Templates</div>
+                                                <p className="text-blue-200 text-xs">20+ SVG templates ready to use</p>
                                             </div>
-                                            <div className="flex gap-3 items-start">
-                                                <div className="bg-green-100 p-2 rounded-lg text-green-600 shrink-0"><Type size={18}/></div>
-                                                <div><h4 className="font-semibold text-slate-900 text-sm">Rich Text</h4><p className="text-xs text-slate-500">Double-click to edit content.</p></div>
+                                            <div className="bg-gradient-to-br from-purple-500/20 to-pink-500/20 p-4 rounded-lg border border-purple-400/30">
+                                                <div className="text-purple-300 text-xs font-bold mb-1">🎬 Morphing</div>
+                                                <p className="text-purple-200 text-xs">PowerPoint-like shape morphs</p>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-green-500/20 to-emerald-500/20 p-4 rounded-lg border border-green-400/30">
+                                                <div className="text-green-300 text-xs font-bold mb-1">🎨 15+ Animations</div>
+                                                <p className="text-green-200 text-xs">Professional motion effects</p>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-yellow-500/20 to-orange-500/20 p-4 rounded-lg border border-yellow-400/30">
+                                                <div className="text-yellow-300 text-xs font-bold mb-1">🎯 Smart Tools</div>
+                                                <p className="text-yellow-200 text-xs">Intuitive editing & sequencing</p>
                                             </div>
                                         </div>
-                                        <button onClick={() => setShowIntro(false)} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2">Start Creating <ArrowRight size={18}/></button>
+                                        <div className="flex gap-3 pt-2">
+                                            <button onClick={() => { setShowIntro(false); setShowTemplates(true); }} className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-lg font-semibold hover:from-purple-600 hover:to-pink-600 transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-500/50">Browse Templates <ArrowRight size={16}/></button>
+                                            <button onClick={() => setShowIntro(false)} className="flex-1 bg-white/10 text-white py-3 rounded-lg font-semibold hover:bg-white/20 transition-all border border-white/20">Start Blank</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Templates Modal */}
+                    {showTemplates && (
+                        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-lg flex items-center justify-center p-4">
+                            <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto custom-scrollbar border border-purple-500/30">
+                                <div className="sticky top-0 bg-slate-900 border-b border-purple-500/30 p-6 flex justify-between items-center">
+                                    <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent">SVG Templates & Presets</h2>
+                                    <button onClick={() => setShowTemplates(false)} className="text-slate-400 hover:text-white"><X size={24}/></button>
+                                </div>
+                                <div className="p-6 space-y-8">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-purple-300 mb-4">Individual Templates</h3>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                            {SVG_TEMPLATES.map(t => (
+                                                <div key={t.id} className="group relative cursor-pointer" onClick={() => { 
+                                                    const els = parseSVGToElements(t.svg, false); // Don't group templates
+                                                    if (els.length > 0) {
+                                                        const containerW = containerRef.current?.clientWidth || 800;
+                                                        const containerH = containerRef.current?.clientHeight || 600;
+                                                        const centerX = (view.x + containerW/2) / view.zoom;
+                                                        const centerY = (view.y + containerH/2) / view.zoom;
+                                                        
+                                                        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                                                        els.forEach(e => {
+                                                            minX = Math.min(minX, e.x);
+                                                            minY = Math.min(minY, e.y);
+                                                            maxX = Math.max(maxX, e.x + e.width);
+                                                            maxY = Math.max(maxY, e.y + e.height);
+                                                        });
+                                                        const groupCenterX = (minX + maxX) / 2;
+                                                        const groupCenterY = (minY + maxY) / 2;
+                                                        const offsetX = centerX - groupCenterX;
+                                                        const offsetY = centerY - groupCenterY;
+                                                        
+                                                        const centeredEls = els.map(e => ({
+                                                            ...e,
+                                                            x: e.x + offsetX,
+                                                            y: e.y + offsetY,
+                                                            id: generateId()
+                                                        }));
+                                                        
+                                                        setElements(prev => [...prev, ...centeredEls]);
+                                                    } else {
+                                                        addElement('svg-template', { templateId: t.id, templateSvg: t.svg, width: 120, height: 120 }); 
+                                                    }
+                                                    setShowTemplates(false); 
+                                                }}>
+                                                    <div className="bg-gradient-to-br from-slate-800 to-slate-700 rounded-lg p-4 border border-slate-600 hover:border-purple-400 transition-all group-hover:shadow-lg group-hover:shadow-purple-500/30">
+                                                        <svg viewBox="0 0 100 100" className="w-full aspect-square mb-2" dangerouslySetInnerHTML={{__html: t.svg}} />
+                                                        <p className="text-xs font-semibold text-slate-300 text-center group-hover:text-purple-300">{t.name}</p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="pt-4 border-t border-slate-700">
+                                        <h3 className="text-lg font-bold text-purple-300 mb-4">Preset Collections</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            {SVG_PRESETS.map(p => (
+                                                <div key={p.id} className="bg-gradient-to-br from-slate-800 to-slate-700 rounded-lg p-4 border border-slate-600 hover:border-purple-400 transition-all cursor-pointer hover:shadow-lg hover:shadow-purple-500/30" onClick={() => { p.templates.forEach(tid => { const t = SVG_TEMPLATES.find(x => x.id === tid); if(t) addElement('svg-template', { templateId: t.id, templateSvg: t.svg, width: 100, height: 100 }); }); setShowTemplates(false); }}>
+                                                    <h4 className="font-bold text-slate-200 mb-2">{p.name}</h4>
+                                                    <p className="text-xs text-slate-400">{p.templates.length} templates</p>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -553,49 +1596,136 @@
                     )}
 
                     {/* Toolbar */}
-                    <div className="order-3 md:order-1 w-full md:w-16 bg-white border-t md:border-t-0 md:border-r border-slate-200 flex flex-row md:flex-col items-center justify-around md:justify-start py-2 md:py-4 gap-2 md:gap-4 z-40 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] md:shadow-sm shrink-0">
-                        <div className="hidden md:flex w-10 h-10 bg-indigo-600 rounded-xl items-center justify-center text-white shadow-lg shadow-indigo-200 shrink-0"><Layers size={20} strokeWidth={2.5}/></div>
-                        <div className="hidden md:block w-8 h-px bg-slate-100" />
-                        {[ { id: 'select', icon: MousePointer2 }, { id: 'rect', icon: Square }, { id: 'circle', icon: Circle }, { id: 'text', icon: Type }, { id: 'line', icon: Minus, rotate: true } ].map(t => (
-                            <button key={t.id} onClick={() => t.id === 'select' ? setTool('select') : addElement(t.id)} className={`p-3 rounded-xl transition-all duration-200 group relative ${tool === t.id ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
-                                <t.icon size={20} className={t.rotate ? '-rotate-45' : ''}/>
+                    <div className="order-3 md:order-1 w-full md:w-20 bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 border-t md:border-t-0 md:border-r border-purple-500/30 flex flex-row md:flex-col items-center justify-around md:justify-start py-2 md:py-4 gap-2 md:gap-3 z-40 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] md:shadow-sm shrink-0 overflow-x-auto md:overflow-y-auto no-scrollbar">
+                        <button onClick={() => setShowTemplates(true)} className="group p-3 rounded-xl transition-all duration-200 text-purple-300 hover:bg-purple-600/30 hover:text-purple-100 md:w-12 md:h-12 relative shrink-0" title="Templates">
+                            <Layers size={20} className="group-hover:scale-110 transition-transform"/>
+                        </button>
+                        <div className="hidden md:block w-full h-px bg-gradient-to-r from-slate-600 to-transparent" />
+                        
+                        {/* Select Tool */}
+                        <button onClick={() => setTool('select')} className={`p-3 rounded-xl transition-all duration-200 group relative md:w-12 md:h-12 shrink-0 ${tool === 'select' ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/50' : 'text-slate-400 hover:bg-purple-600/30 hover:text-purple-200'}`} title="Select">
+                            <MousePointer2 size={20} className="group-hover:scale-110 transition-transform"/>
+                        </button>
+                        
+                        {/* Text Tool */}
+                        <button onClick={() => addElement('text')} className="p-3 rounded-xl transition-all duration-200 group relative md:w-12 md:h-12 shrink-0 text-slate-400 hover:bg-purple-600/30 hover:text-purple-200" title="Text">
+                            <Type size={20} className="group-hover:scale-110 transition-transform"/>
+                        </button>
+                        
+                        <div className="hidden md:block w-full h-px bg-gradient-to-r from-slate-600 to-transparent" />
+                        
+                        {/* More Shapes Dropdown */}
+                        <div className="relative shrink-0 shape-menu-container">
+                            <button onClick={(e) => { setShowShapeMenu(!showShapeMenu); e.currentTarget.getBoundingClientRect(); }} className="p-3 rounded-xl transition-all duration-200 group relative md:w-12 md:h-12 text-slate-400 hover:bg-purple-600/30 hover:text-purple-200" title="All Shapes">
+                                <Menu size={20} className="group-hover:scale-110 transition-transform"/>
                             </button>
-                        ))}
+                            {showShapeMenu && (
+                                <div className="fixed left-4 md:left-24 bottom-20 md:bottom-auto md:top-24 z-[9999] bg-gradient-to-br from-slate-800/95 to-slate-900/95 backdrop-blur-xl border border-purple-500/30 rounded-xl shadow-2xl p-3 min-w-[200px] max-h-[60vh] overflow-y-auto custom-scrollbar">
+                                    <div className="space-y-1">
+                                        <h3 className="text-xs font-bold text-purple-300 uppercase tracking-wider mb-2 px-2">Basic Shapes</h3>
+                                        <button onClick={() => { addElement('rect'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">□ Rectangle</button>
+                                        <button onClick={() => { addElement('circle'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">○ Circle</button>
+                                        <button onClick={() => { addElement('line'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">— Line</button>
+                                        <button onClick={() => { addElement('triangle'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">△ Triangle</button>
+                                        <button onClick={() => { addElement('pentagon'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">⬠ Pentagon</button>
+                                        <button onClick={() => { addElement('hexagon'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">⬡ Hexagon</button>
+                                        <button onClick={() => { addElement('octagon'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">⯃ Octagon</button>
+                                        <button onClick={() => { addElement('star'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">★ Star</button>
+                                        
+                                        <h3 className="text-xs font-bold text-purple-300 uppercase tracking-wider mt-3 mb-2 px-2 pt-2 border-t border-purple-500/20">Symbols</h3>
+                                        <button onClick={() => { addElement('heart'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">♥ Heart</button>
+                                        <button onClick={() => { addElement('diamond'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">◆ Diamond</button>
+                                        <button onClick={() => { addElement('cross'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">✚ Cross</button>
+                                        <button onClick={() => { addElement('lightning'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">⚡ Lightning</button>
+                                        <button onClick={() => { addElement('cloud'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">☁ Cloud</button>
+                                        
+                                        <h3 className="text-xs font-bold text-purple-300 uppercase tracking-wider mt-3 mb-2 px-2 pt-2 border-t border-purple-500/20">Arrows</h3>
+                                        <button onClick={() => { addElement('arrow-right'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">→ Arrow Right</button>
+                                        <button onClick={() => { addElement('arrow-left'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">← Arrow Left</button>
+                                        <button onClick={() => { addElement('arrow-up'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">↑ Arrow Up</button>
+                                        <button onClick={() => { addElement('arrow-down'); setShowShapeMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-purple-600/30 text-slate-300 text-sm transition-colors">↓ Arrow Down</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     {/* Main Canvas Area */}
-                    <div className="order-2 flex-1 flex flex-col relative h-full overflow-hidden">
-                        <div className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 z-10 shrink-0">
+                    <div className="order-2 flex-1 flex flex-col relative h-full overflow-hidden bg-gradient-to-br from-slate-900 to-slate-800">
+                        <div className="h-16 bg-gradient-to-r from-purple-900 via-slate-900 to-slate-900 border-b border-purple-500/30 flex items-center justify-between px-6 z-10 shrink-0 shadow-lg shadow-purple-500/10">
                             <div className="flex items-center gap-4">
-                                <h1 className="font-bold text-slate-800 tracking-tight flex items-center gap-2 text-sm md:text-base">Canvas Studio <span className="text-[10px] px-1.5 py-0.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-md font-medium uppercase tracking-wider">Ultimate</span></h1>
-                                <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 border-l pl-3 ml-1"><Upload size={12}/> Drop SVG</div>
+                                <h1 className="font-bold text-slate-100 tracking-tight flex items-center gap-3 text-base md:text-xl">
+                                    <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center text-white text-sm font-bold">S</div>
+                                    Canvas Studio <span className="text-[10px] px-2 py-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-md font-bold uppercase tracking-wider">Pro</span>
+                                </h1>
+                                <div className="hidden md:flex items-center gap-2 text-xs text-slate-400 border-l border-purple-500/30 pl-4 ml-2"><Upload size={14}/> Drop SVG or Templates</div>
                             </div>
-                            <div className="flex items-center gap-2 md:gap-3">
-                                <button onClick={() => setShowGrid(!showGrid)} className={`p-2 rounded-lg hover:bg-slate-100 hidden md:block ${showGrid ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400'}`}><Grid size={18}/></button>
-                                <div className="flex items-center bg-slate-100 rounded-lg p-1">
-                                    <button onClick={() => setView(v => ({...v, zoom: Math.max(0.2, v.zoom - 0.2)}))} className="p-1.5 hover:bg-white rounded-md text-slate-600"><ZoomOut size={16}/></button>
-                                    <span className="text-xs font-mono w-8 text-center hidden sm:block">{Math.round(view.zoom * 100)}%</span>
-                                    <button onClick={() => setView(v => ({...v, zoom: Math.min(5, v.zoom + 0.2)}))} className="p-1.5 hover:bg-white rounded-md text-slate-600"><ZoomIn size={16}/></button>
+                            <div className="flex items-center gap-2 md:gap-4">
+                                <button onClick={() => setShowLayersPanel(!showLayersPanel)} className={`p-2 rounded-lg transition-all ${showLayersPanel ? 'bg-gradient-to-r from-purple-500/30 to-pink-500/30 text-purple-300 border border-purple-400/50' : 'text-slate-500 hover:bg-purple-600/20'}`} title="Layers"><Layers size={18}/></button>
+                                <button onClick={() => setShowGrid(!showGrid)} className={`p-2 rounded-lg transition-all ${showGrid ? 'bg-gradient-to-r from-purple-500/30 to-pink-500/30 text-purple-300 border border-purple-400/50' : 'text-slate-500 hover:bg-purple-600/20'}`}><Grid size={18}/></button>
+                                <div className="flex items-center bg-slate-800/50 rounded-lg p-1 border border-purple-500/20">
+                                    <button onClick={() => setView(v => ({...v, zoom: Math.max(0.2, v.zoom - 0.2)}))} className="p-1.5 hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-200"><ZoomOut size={16}/></button>
+                                    <span className="text-xs font-mono w-8 text-center hidden sm:block text-slate-300">{Math.round(view.zoom * 100)}%</span>
+                                    <button onClick={() => setView(v => ({...v, zoom: Math.min(5, v.zoom + 0.2)}))} className="p-1.5 hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-200"><ZoomIn size={16}/></button>
                                 </div>
-                                <button onClick={() => setIsPlaying(!isPlaying)} className={`flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-sm font-semibold transition-all ${isPlaying ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-slate-900 text-white hover:bg-slate-800 shadow-md'}`}>
+                                <button onClick={() => setIsPlaying(!isPlaying)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all shadow-lg ${isPlaying ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-orange-500/50 hover:from-amber-600 hover:to-orange-600' : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-purple-500/50 hover:from-purple-700 hover:to-pink-700'}`}>
                                     {isPlaying ? <Pause size={16} fill="currentColor"/> : <Play size={16} fill="currentColor"/>} <span className="hidden sm:inline">{isPlaying ? 'Pause' : 'Play'}</span>
                                 </button>
-                                <button onClick={handleExport} className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Export SVG"><Download size={20} /></button>
+                                <button onClick={handleExport} className="p-2 text-slate-400 hover:text-green-400 hover:bg-green-500/20 rounded-lg transition-all border border-slate-700 hover:border-green-500/50" title="Export SVG"><Download size={20} /></button>
+                                <div className="flex items-center gap-1 ml-2 border-l border-purple-500/30 pl-2">
+                                    <button onClick={handleSaveProject} className="p-2 text-slate-400 hover:text-blue-400 hover:bg-blue-500/20 rounded-lg transition-all" title="Save Project"><Download size={16} className="rotate-180"/></button>
+                                    <label className="p-2 text-slate-400 hover:text-blue-400 hover:bg-blue-500/20 rounded-lg transition-all cursor-pointer" title="Load Project">
+                                        <Upload size={16}/>
+                                        <input type="file" accept=".json" className="hidden" onChange={handleLoadProject}/>
+                                    </label>
+                                </div>
                             </div>
                         </div>
 
-                        <div className="flex-1 bg-[#e5e5e5] relative overflow-hidden touch-none" ref={containerRef} onDrop={handleDrop} onDragOver={handleDragOver}>
-                            <div className="absolute inset-0 pointer-events-none" style={{ backgroundSize: `${20 * view.zoom}px ${20 * view.zoom}px`, backgroundImage: showGrid ? `radial-gradient(#94a3b8 1px, transparent 1px)` : 'none', backgroundPosition: `${view.x}px ${view.y}px`, opacity: 0.5 }}/>
+                        <div className="flex-1 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hidden touch-none" ref={containerRef} onDrop={handleDrop} onDragOver={handleDragOver}>
+                            <div className="absolute inset-0 pointer-events-none" style={{ backgroundSize: `${20 * view.zoom}px ${20 * view.zoom}px`, backgroundImage: showGrid ? `radial-gradient(#6366f1 0.5px, transparent 0.5px)` : 'none', backgroundPosition: `${view.x}px ${view.y}px`, opacity: 0.3 }}/>
                             <div className="w-full h-full" onMouseDown={handlePointerDown} onMouseMove={handlePointerMove} onMouseUp={handlePointerUp} onMouseLeave={handlePointerUp} onTouchStart={handlePointerDown} onTouchMove={handlePointerMove} onTouchEnd={handlePointerUp} onWheel={handleWheel}>
-                                <svg xmlns="http://www.w3.org/2000/svg" ref={svgRef} width="100%" height="100%" viewBox={`${-view.x / view.zoom} ${-view.y / view.zoom} ${(containerRef.current?.clientWidth || 800) / view.zoom} ${(containerRef.current?.clientHeight || 600) / view.zoom}`} style={{ touchAction: 'none' }}>
+                                <svg xmlns="http://www.w3.org/2000/svg" ref={svgRef} width="100%" height="100%" viewBox={`${-view.x / view.zoom} ${-view.y / view.zoom} ${(containerRef.current?.clientWidth || 800) / view.zoom} ${(containerRef.current?.clientHeight || 600) / view.zoom}`} style={{ touchAction: 'none', background: 'transparent' }}>
                                     <defs>
                                         <style>
                                             {GLOBAL_STYLES}
-                                            {elements.flatMap(el => el.animations.map((anim, idx) => anim.type === 'move' ? `@keyframes move-${el.id}-${idx} { to { transform: translate(${anim.pathX}px, ${anim.pathY}px); } }` : '')).join('\n')}
+                                            {elements.flatMap(el => (el.animations || []).map((anim, idx) => {
+                                                if (anim.type === 'move') {
+                                                    return `@keyframes move-${el.id}-${idx} { to { transform: translate(${anim.pathX}px, ${anim.pathY}px); } }`;
+                                                }
+                                                if (anim.type === 'morph' && el.type === 'polygon' && el.points) {
+                                                    // For polygons, create a subtle morph by scaling
+                                                    return `@keyframes morph-${el.id}-${idx} { 0% { transform: scale(1); } 50% { transform: scale(1.15) rotate(3deg); } 100% { transform: scale(1); } }`;
+                                                }
+                                                if (anim.type === 'morph') {
+                                                    return `@keyframes morph-${el.id}-${idx} { 0% { transform: scale(1); } 50% { transform: scale(1.1) rotate(5deg); } 100% { transform: scale(1); } }`;
+                                                }
+                                                if (anim.type === 'color') {
+                                                    const targetColor = anim.targetColor || '#ff0000';
+                                                    const startColor = el.fill || '#000000';
+                                                    // Handle gradient fills
+                                                    if (el.fillType === 'gradient') {
+                                                        return `@keyframes color-${el.id}-${idx} { from { opacity: 1; } to { opacity: 1; filter: hue-rotate(${anim.hueRotate || 180}deg) saturate(${anim.saturate || 1.5}); } }`;
+                                                    }
+                                                    return `@keyframes color-${el.id}-${idx} { from { fill: ${startColor}; } to { fill: ${targetColor}; } }`;
+                                                }
+                                                if (anim.type === 'textSize' && el.type === 'text') {
+                                                    const startSize = el.fontSize || 24;
+                                                    const targetSize = anim.targetSize || 40;
+                                                    return `@keyframes textSize-${el.id}-${idx} { from { font-size: ${startSize}px; } to { font-size: ${targetSize}px; } }`;
+                                                }
+                                                return '';
+                                            })).join('\n')}
                                         </style>
                                         <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#000000" floodOpacity="0.15"/></filter>
-                                        <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#333" /></marker>
-                                        {elements.map(el => el.fillType === 'gradient' && (<linearGradient key={`grad-${el.id}`} id={`grad-${el.id}`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={el.gradientStart} /><stop offset="100%" stopColor={el.gradientEnd} /></linearGradient>))}
+                                        <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#a78bfa" /></marker>
+                                        {elements.map(el => el.fillType === 'gradient' && (
+                                            <linearGradient key={`grad-${el.id}`} id={`grad-${el.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                                                {(el.gradientStops || []).map((stop, idx) => (
+                                                    <stop key={idx} offset={`${stop.offset}%`} stopColor={stop.color} />
+                                                ))}
+                                            </linearGradient>
+                                        ))}
                                     </defs>
                                     {elements.map(renderElement)}
                                     {renderTransformGizmo()}
@@ -605,66 +1735,313 @@
                     </div>
 
                     {/* Inspector */}
-                    <div className={`fixed md:static inset-x-0 bottom-[64px] md:bottom-0 z-30 bg-white border-t md:border-t-0 md:border-l border-slate-200 md:w-80 w-full md:h-full shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.2)] md:shadow-none transition-transform duration-300 ease-in-out flex flex-col ${selectedEl && isInspectorOpen ? 'translate-y-0' : 'translate-y-[110%] md:translate-y-0'}`} style={{ maxHeight: '60vh', height: 'auto' }}>
-                        <div className="flex border-b border-slate-200">
-                            <button onClick={() => setActiveTab('properties')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === 'properties' ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/50' : 'text-slate-500 hover:bg-slate-50'}`}>Properties</button>
-                            <button onClick={() => setActiveTab('timeline')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === 'timeline' ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/50' : 'text-slate-500 hover:bg-slate-50'}`}>Timeline</button>
-                            <button onClick={() => setIsInspectorOpen(false)} className="md:hidden px-4 text-slate-400"><ChevronDown size={18}/></button>
+                    <div className={`fixed md:static md:order-3 inset-x-0 bottom-[64px] md:bottom-0 z-30 bg-gradient-to-b from-slate-800 to-slate-900 border-t md:border-t-0 md:border-l border-purple-500/30 md:w-96 w-full md:h-full shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.5)] md:shadow-none transition-transform duration-300 ease-in-out flex flex-col ${selectedEl && isInspectorOpen ? 'translate-y-0' : 'translate-y-[110%] md:translate-y-0'}`} style={{ maxHeight: '60vh', height: 'auto' }}>
+                        <div className="flex border-b border-purple-500/30 bg-gradient-to-r from-slate-800 to-slate-700">
+                            <button onClick={() => setActiveTab('layers')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'layers' ? 'text-purple-300 border-b-2 border-purple-500 bg-purple-600/20' : 'text-slate-400 hover:bg-slate-700/50'}`}>Layers</button>
+                            <button onClick={() => setActiveTab('properties')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'properties' ? 'text-purple-300 border-b-2 border-purple-500 bg-purple-600/20' : 'text-slate-400 hover:bg-slate-700/50'}`}>Properties</button>
+                            <button onClick={() => setActiveTab('timeline')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'timeline' ? 'text-purple-300 border-b-2 border-purple-500 bg-purple-600/20' : 'text-slate-400 hover:bg-slate-700/50'}`}>Timeline</button>
+                            <button onClick={() => setActiveTab('svg')} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'svg' ? 'text-purple-300 border-b-2 border-purple-500 bg-purple-600/20' : 'text-slate-400 hover:bg-slate-700/50'}`}>SVG Code</button>
+                            <button onClick={() => setIsInspectorOpen(false)} className="md:hidden px-4 text-slate-400 hover:text-slate-200"><ChevronDown size={18}/></button>
                         </div>
 
                         <div className="flex-1 overflow-y-auto custom-scrollbar">
-                            {activeTab === 'properties' && selectedEl ? (
+                            {activeTab === 'layers' ? (
+                                <div className="p-4 space-y-2">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-xs font-bold text-purple-300 uppercase tracking-wider">All Layers</h3>
+                                        <div className="flex gap-1">
+                                            <button onClick={() => { if (multiSelection.length > 0 || selection) groupSelection(); }} className="px-2 py-1 text-xs bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 rounded transition-colors" title="Group Selected">
+                                                <Layers size={12}/>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {multiSelection.length > 0 && (
+                                        <div className="bg-purple-500/20 border border-purple-500/30 rounded-lg p-3 mb-3">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-sm text-purple-200">{multiSelection.length} layers selected</span>
+                                                <button onClick={() => setMultiSelection([])} className="text-xs text-purple-400 hover:text-purple-200">Clear</button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {elements.length === 0 ? (
+                                        <div className="text-center py-12 text-slate-500">
+                                            <Layers size={48} className="mx-auto mb-3 opacity-20"/>
+                                            <p className="text-sm">No layers yet</p>
+                                            <p className="text-xs mt-1">Add shapes to get started</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-1">
+                                            {[...elements].reverse().map(el => {
+                                                const getLayerName = (element) => {
+                                                    if (element.type === 'text') return element.text.slice(0, 20) || 'Text';
+                                                    if (element.type === 'group') return `Group (${element.children?.length || 0} items)`;
+                                                    if (element.type === 'svg-group') return 'Imported SVG';
+                                                    if (element.type === 'polygon') return element.points?.length ? `${element.points.length}-sided Shape` : 'Polygon';
+                                                    if (element.type === 'path') return 'Custom Path';
+                                                    return element.type.charAt(0).toUpperCase() + element.type.slice(1);
+                                                };
+                                                
+                                                return (
+                                                    <div key={el.id}>
+                                                        <div className={`p-3 rounded-lg border transition-all cursor-pointer ${multiSelection.includes(el.id) ? 'bg-purple-600/30 border-purple-500' : selection === el.id ? 'bg-purple-500/20 border-purple-500/50' : 'bg-slate-700/30 border-slate-600/30 hover:bg-slate-700/50 hover:border-slate-600/50'}`} onClick={(e) => {
+                                                            if (e.ctrlKey || e.metaKey) {
+                                                                if (multiSelection.includes(el.id)) {
+                                                                    setMultiSelection(prev => prev.filter(i => i !== el.id));
+                                                                } else {
+                                                                    setMultiSelection(prev => [...prev, el.id]);
+                                                                }
+                                                            } else {
+                                                                setSelection(el.id);
+                                                                setMultiSelection([]);
+                                                                setIsInspectorOpen(true);
+                                                                setActiveTab('properties');
+                                                            }
+                                                        }}>
+                                                            <div className="flex items-center justify-between">
+                                                                <div className="flex items-center gap-2 flex-1">
+                                                                    <div className="text-slate-400">
+                                                                        {el.type === 'rect' && <Square size={14}/>}
+                                                                        {el.type === 'circle' && <Circle size={14}/>}
+                                                                        {el.type === 'text' && <Type size={14}/>}
+                                                                        {el.type === 'line' && <Minus size={14}/>}
+                                                                        {el.type === 'group' && <Layers size={14}/>}
+                                                                        {(el.type === 'polygon' || el.type === 'path') && <Edit3 size={14}/>}
+                                                                        {el.type === 'svg-group' && <ImageIcon size={14}/>}
+                                                                    </div>
+                                                                    <span className="text-sm text-slate-200 truncate">
+                                                                        {getLayerName(el)}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex items-center gap-1">
+                                                                    {el.locked && <Lock size={12} className="text-red-400"/>}
+                                                                    {el.animations && el.animations.length > 0 && <Play size={12} className="text-green-400"/>}
+                                                                    {el.type === 'group' && el.children?.length > 0 && <ChevronDown size={12} className="text-slate-400"/>}
+                                                                </div>
+                                                                </div>
+                                                    </div>
+                                                    {el.type === 'group' && el.children && el.children.length > 0 && selection === el.id && (
+                                                        <div className="mt-2 ml-6 space-y-1">
+                                                            {el.children.map(child => (
+                                                                <div key={child.id} className="p-2 rounded bg-slate-800/50 border border-slate-700/50 text-xs text-slate-300 flex items-center gap-2">
+                                                                    <div className="text-slate-500">
+                                                                        {child.type === 'rect' && <Square size={12}/>}
+                                                                        {child.type === 'circle' && <Circle size={12}/>}
+                                                                        {child.type === 'text' && <Type size={12}/>}
+                                                                        {(child.type === 'polygon' || child.type === 'path') && <Edit3 size={12}/>}
+                                                                    </div>
+                                                                    <span className="truncate">{child.type}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                    <div className="mt-4 p-3 bg-slate-700/30 rounded-lg border border-slate-600/30">
+                                        <p className="text-xs text-slate-400 mb-2"><strong>Tip:</strong> Hold Ctrl/Cmd to select multiple layers</p>
+                                        <p className="text-xs text-slate-400">Click the Group button to create groups</p>
+                                    </div>
+                                </div>
+                            ) : activeTab === 'properties' && selectedEl ? (
                                 <div className="pb-8">
-                                    <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/80 backdrop-blur flex justify-between items-center shrink-0">
-                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{selectedEl.type}</span>
+                                    <div className="px-5 py-3 border-b border-purple-500/20 bg-gradient-to-r from-purple-900/30 to-pink-900/30 backdrop-blur flex justify-between items-center shrink-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">{selectedEl.type}</span>
+                                            {multiSelection.length > 0 && <span className="text-xs bg-purple-500/30 text-purple-200 px-2 py-0.5 rounded-full">{multiSelection.length} selected</span>}
+                                        </div>
                                         <div className="flex items-center gap-1">
-                                            <button onClick={() => updateElement(selectedEl.id, { locked: !selectedEl.locked })} className={`p-2 rounded hover:bg-slate-200 ${selectedEl.locked ? 'text-red-500' : 'text-slate-400'}`}>{selectedEl.locked ? <Lock size={16}/> : <Unlock size={16}/>}</button>
-                                            <button onClick={() => duplicateElement(selectedEl.id)} className="p-2 rounded hover:bg-slate-200 text-slate-400"><Copy size={16}/></button>
-                                            <button onClick={() => removeElement(selectedEl.id)} className="p-2 rounded hover:bg-red-100 text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
+                                            <button onClick={groupSelection} className="p-2 rounded hover:bg-slate-700 transition-colors text-slate-500 hover:text-slate-300" title="Group Selection"><Layers size={16}/></button>
+                                            {selectedEl.type === 'group' && (
+                                                <button onClick={ungroupSelection} className="p-2 rounded hover:bg-slate-700 transition-colors text-slate-500 hover:text-slate-300" title="Ungroup"><Layers size={16} className="line-through"/></button>
+                                            )}
+                                            {selectedEl.type === 'svg-group' && (
+                                                <button onClick={() => {
+                                                    const els = parseSVGToElements(selectedEl.rawSVG || '', false);
+                                                    removeElement(selectedEl.id);
+                                                    setElements(prev => [...prev, ...els.map(e => ({ ...e, x: selectedEl.x + e.x, y: selectedEl.y + e.y }))]);
+                                                }} className="p-2 rounded hover:bg-slate-700 transition-colors text-slate-500 hover:text-slate-300" title="Explode to Editable Elements">
+                                                    <Sparkles size={16}/>
+                                                </button>
+                                            )}
+                                            {(selectedEl.type === 'polygon' || selectedEl.type === 'path') && (
+                                                <button 
+                                                    onClick={() => setEditMode(prev => !prev)} 
+                                                    className={`p-2 rounded hover:bg-slate-700 transition-colors ${editMode ? 'text-green-400 bg-green-900/20' : 'text-slate-500 hover:text-slate-300'}`}
+                                                    title="Edit Points"
+                                                >
+                                                    <Edit3 size={16}/>
+                                                </button>
+                                            )}
+                                            <button onClick={() => updateElement(selectedEl.id, { locked: !selectedEl.locked })} className={`p-2 rounded hover:bg-slate-700 transition-colors ${selectedEl.locked ? 'text-red-400' : 'text-slate-500 hover:text-slate-300'}`}>{selectedEl.locked ? <Lock size={16}/> : <Unlock size={16}/>}</button>
+                                            <button onClick={() => duplicateElement(selectedEl.id)} className="p-2 rounded hover:bg-slate-700 text-slate-500 hover:text-slate-300 transition-colors"><Copy size={16}/></button>
+                                            <button onClick={() => removeElement(selectedEl.id)} className="p-2 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400 transition-colors"><Trash2 size={16}/></button>
                                         </div>
                                     </div>
 
                                     {selectedEl.type === 'text' && (
-                                        <div className="p-5 border-b border-slate-100">
-                                            <h3 className="text-xs font-bold text-slate-900 mb-2">Content</h3>
-                                            <textarea rows={3} value={selectedEl.text} onChange={(e) => updateElement(selectedEl.id, {text: e.target.value})} className="w-full text-sm border border-slate-200 rounded-lg p-2 focus:ring-2 focus:ring-indigo-100 outline-none resize-none" placeholder="Type text here..." />
+                                        <div className="p-5 border-b border-purple-500/20">
+                                            <h3 className="text-xs font-bold text-purple-300 mb-2">Content</h3>
+                                            <textarea rows={3} value={selectedEl.text} onChange={(e) => updateElement(selectedEl.id, {text: e.target.value})} className="w-full text-sm border border-purple-500/30 rounded-lg p-2 bg-slate-700/50 text-slate-100 focus:ring-2 focus:ring-purple-500 outline-none resize-none placeholder-slate-500" placeholder="Type text here..." />
                                             <div className="flex gap-2 mt-2">
-                                                <select value={selectedEl.fontFamily} onChange={(e) => updateElement(selectedEl.id, {fontFamily: e.target.value})} className="flex-1 text-xs border border-slate-200 rounded p-1.5"><option value="Inter, sans-serif">Sans</option><option value="Times New Roman, serif">Serif</option><option value="Courier New, monospace">Mono</option></select>
-                                                <input type="number" value={Math.round(selectedEl.fontSize)} onChange={(e) => updateElement(selectedEl.id, {fontSize: +e.target.value})} className="w-14 text-xs border border-slate-200 rounded p-1.5" />
+                                                <select value={selectedEl.fontFamily} onChange={(e) => updateElement(selectedEl.id, {fontFamily: e.target.value})} className="flex-1 text-xs border border-purple-500/30 rounded p-1.5 bg-slate-800/90 text-slate-200 focus:ring-2 focus:ring-purple-500 outline-none"><option className="bg-slate-800 text-slate-200" value="Inter, sans-serif">Sans</option><option className="bg-slate-800 text-slate-200" value="Times New Roman, serif">Serif</option><option className="bg-slate-800 text-slate-200" value="Courier New, monospace">Mono</option></select>
+                                                <input type="number" value={Math.round(selectedEl.fontSize)} onChange={(e) => updateElement(selectedEl.id, {fontSize: +e.target.value})} className="w-14 text-xs border border-purple-500/30 rounded p-1.5 bg-slate-700/50 text-slate-200" />
                                             </div>
                                         </div>
                                     )}
                                     
-                                    {selectedEl.type !== 'line' && selectedEl.type !== 'image' && (
-                                        <div className="p-5 border-b border-slate-100">
-                                            <h3 className="text-xs font-bold text-slate-900 mb-3">Fill Color</h3>
-                                            <div className="flex flex-wrap gap-1.5">{COLORS.Blue.map(c => <button key={c} onClick={() => updateElement(selectedEl.id, {fill: c, fillType: 'solid'})} className="w-5 h-5 rounded-full border border-slate-100" style={{backgroundColor: c}}/>)}</div>
-                                            <div className="mt-2"><input type="color" value={selectedEl.fill} onChange={(e) => updateElement(selectedEl.id, {fill: e.target.value, fillType: 'solid'})} className="w-full h-6"/></div>
+                                    {selectedEl.type !== 'line' && selectedEl.type !== 'image' && selectedEl.type !== 'svg-group' && selectedEl.type !== 'svg-template' && selectedEl.type !== 'group' && (
+                                        <div className="p-5 border-b border-purple-500/20">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <h3 className="text-xs font-bold text-purple-300">Fill</h3>
+                                                <div className="flex gap-1">
+                                                    <button onClick={() => updateElement(selectedEl.id, {fillType: 'solid'})} className={`px-2 py-1 text-xs rounded ${selectedEl.fillType === 'solid' ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Solid</button>
+                                                    <button onClick={() => updateElement(selectedEl.id, {fillType: 'gradient'})} className={`px-2 py-1 text-xs rounded ${selectedEl.fillType === 'gradient' ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Gradient</button>
+                                                </div>
+                                            </div>
+                                            
+                                            {selectedEl.fillType === 'solid' ? (
+                                                <>
+                                                    <div className="flex flex-wrap gap-2 mb-3">
+                                                        {Object.entries(COLORS).map(([name, colors]) => (
+                                                            <div key={name} className="flex gap-1">
+                                                                {colors.slice(0, 3).map(c => (
+                                                                    <button key={c} onClick={() => updateElement(selectedEl.id, {fill: c})} className="w-5 h-5 rounded-full border border-slate-600 hover:border-purple-400 transition-all hover:scale-110" style={{backgroundColor: c}}/>
+                                                                ))}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <div><input type="color" value={selectedEl.fill} onChange={(e) => updateElement(selectedEl.id, {fill: e.target.value})} className="w-full h-8 rounded cursor-pointer border border-purple-500/30"/></div>
+                                                </>
+                                            ) : (
+                                                <div className="space-y-3">
+                                                    {(selectedEl.gradientStops || []).map((stop, idx) => (
+                                                        <div key={idx} className="flex items-center gap-2 bg-slate-700/50 p-2 rounded-lg">
+                                                            <input type="number" min="0" max="100" value={stop.offset} onChange={(e) => {
+                                                                const newStops = [...(selectedEl.gradientStops || [])];
+                                                                newStops[idx] = { ...newStops[idx], offset: +e.target.value };
+                                                                updateElement(selectedEl.id, { gradientStops: newStops });
+                                                            }} className="w-14 text-xs border border-purple-500/30 rounded p-1 bg-slate-700 text-slate-200" />
+                                                            <span className="text-xs text-slate-400">%</span>
+                                                            <input type="color" value={stop.color} onChange={(e) => {
+                                                                const newStops = [...(selectedEl.gradientStops || [])];
+                                                                newStops[idx] = { ...newStops[idx], color: e.target.value };
+                                                                updateElement(selectedEl.id, { gradientStops: newStops });
+                                                            }} className="w-8 h-8 rounded cursor-pointer border border-purple-500/30"/>
+                                                            <input type="text" value={stop.color} onChange={(e) => {
+                                                                const newStops = [...(selectedEl.gradientStops || [])];
+                                                                newStops[idx] = { ...newStops[idx], color: e.target.value };
+                                                                updateElement(selectedEl.id, { gradientStops: newStops });
+                                                            }} className="flex-1 text-xs border border-purple-500/30 rounded p-1 bg-slate-700 text-slate-200" />
+                                                            {(selectedEl.gradientStops || []).length > 2 && (
+                                                                <button onClick={() => {
+                                                                    const newStops = (selectedEl.gradientStops || []).filter((_, i) => i !== idx);
+                                                                    updateElement(selectedEl.id, { gradientStops: newStops });
+                                                                }} className="p-1 text-red-400 hover:bg-red-500/20 rounded"><X size={14}/></button>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                    <button onClick={() => {
+                                                        const stops = selectedEl.gradientStops || [];
+                                                        const newOffset = stops.length > 0 ? Math.min(100, stops[stops.length - 1].offset + 20) : 50;
+                                                        updateElement(selectedEl.id, { gradientStops: [...stops, { offset: newOffset, color: '#60a5fa' }] });
+                                                    }} className="w-full py-2 text-xs bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 rounded-lg transition-colors flex items-center justify-center gap-1">
+                                                        <Plus size={14}/> Add Color Stop
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 
-                                    <div className="p-5 bg-gradient-to-br from-indigo-50 to-white">
+                                    <div className="p-5 bg-gradient-to-br from-purple-900/30 to-pink-900/30 border-b border-purple-500/20">
                                         <div className="flex items-center justify-between mb-3">
-                                            <h3 className="text-xs font-bold text-indigo-900 flex items-center gap-2"><Play size={12} className="fill-indigo-900"/> Animation Chain</h3>
-                                            <button onClick={() => addAnimation(selectedEl.id)} className="p-1 rounded bg-indigo-100 text-indigo-600 hover:bg-indigo-200"><Plus size={14}/></button>
+                                            <h3 className="text-xs font-bold text-purple-300 flex items-center gap-2"><Play size={12} /> Animation Chain</h3>
+                                            <button onClick={() => addAnimation(selectedEl.id)} className="p-1 rounded bg-purple-500/30 text-purple-300 hover:bg-purple-500/50 transition-colors"><Plus size={14}/></button>
                                         </div>
                                         
                                         <div className="space-y-4">
-                                            {selectedEl.animations.length === 0 && <p className="text-xs text-slate-400 italic">No animations added.</p>}
-                                            {selectedEl.animations.map((anim, idx) => (
-                                                <div key={idx} className="bg-white border border-indigo-100 rounded-lg p-3 shadow-sm relative group">
-                                                    <button onClick={() => removeAnimation(selectedEl.id, idx)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><X size={12}/></button>
+                                            {(!selectedEl.animations || selectedEl.animations.length === 0) && <p className="text-xs text-slate-500 italic">No animations added. Click + to add.</p>}
+                                            {(selectedEl.animations || []).map((anim, idx) => (
+                                                <div 
+                                                    key={idx} 
+                                                    draggable
+                                                    onDragStart={() => setDraggedAnimIndex(idx)}
+                                                    onDragOver={(e) => e.preventDefault()}
+                                                    onDrop={() => {
+                                                        if (draggedAnimIndex !== null && draggedAnimIndex !== idx) {
+                                                            reorderAnimation(selectedEl.id, draggedAnimIndex, idx);
+                                                        }
+                                                        setDraggedAnimIndex(null);
+                                                    }}
+                                                    onDragEnd={() => setDraggedAnimIndex(null)}
+                                                    className={`bg-slate-700/50 border border-purple-500/20 rounded-lg p-3 shadow-sm relative group cursor-move hover:border-purple-400/50 transition-all ${draggedAnimIndex === idx ? 'opacity-50 scale-95' : ''}`}
+                                                >
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="text-slate-500 cursor-grab active:cursor-grabbing" title="Drag to reorder">
+                                                                <Menu size={14}/>
+                                                            </div>
+                                                            <span className="text-[10px] font-bold text-purple-400 uppercase">Step {idx + 1}</span>
+                                                        </div>
+                                                        <button onClick={() => removeAnimation(selectedEl.id, idx)} className="text-slate-500 hover:text-red-400 transition-opacity"><X size={12}/></button>
+                                                    </div>
                                                     <div className="mb-2">
-                                                        <span className="text-[10px] font-bold text-indigo-300 uppercase block mb-1">Step {idx + 1}</span>
-                                                        <select value={anim.type} onChange={(e) => updateAnimation(selectedEl.id, idx, { type: e.target.value })} className="w-full text-sm font-medium border-b border-indigo-100 pb-1 bg-transparent outline-none">
+                                                        <select value={anim.type} onChange={(e) => updateAnimation(selectedEl.id, idx, { type: e.target.value })} className="w-full text-sm font-medium border border-purple-500/30 rounded p-1.5 bg-slate-800/90 text-slate-200 focus:ring-2 focus:ring-purple-500 outline-none">
                                                             {ANIMATION_PRESETS.map(p => (<option key={p.id} value={p.id}>{p.label}</option>))}
                                                         </select>
                                                     </div>
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        <div><label className="text-[10px] text-slate-400">Duration</label><input type="number" step="0.1" value={anim.duration} onChange={(e) => updateAnimation(selectedEl.id, idx, { duration: +e.target.value })} className="w-full text-xs border border-slate-200 rounded p-1"/></div>
-                                                        <div><label className="text-[10px] text-slate-400">Delay</label><input type="number" step="0.1" value={anim.delay} onChange={(e) => updateAnimation(selectedEl.id, idx, { delay: +e.target.value })} className="w-full text-xs border border-slate-200 rounded p-1"/></div>
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        <div><label className="text-[10px] text-slate-400">Duration (s)</label><input type="number" step="0.1" min="0.1" value={anim.duration} onChange={(e) => updateAnimation(selectedEl.id, idx, { duration: +e.target.value })} className="w-full text-xs border border-purple-500/30 rounded p-1 bg-slate-800/90 text-slate-200 focus:ring-2 focus:ring-purple-500 outline-none"/></div>
+                                                        <div><label className="text-[10px] text-slate-400">Delay (s)</label><input type="number" step="0.1" min="0" value={anim.delay} onChange={(e) => updateAnimation(selectedEl.id, idx, { delay: +e.target.value })} className="w-full text-xs border border-purple-500/30 rounded p-1 bg-slate-800/90 text-slate-200 focus:ring-2 focus:ring-purple-500 outline-none"/></div>
+                                                        <div>
+                                                            <label className="text-[10px] text-slate-400">Easing</label>
+                                                            <select value={anim.ease || 'ease-out'} onChange={(e) => updateAnimation(selectedEl.id, idx, { ease: e.target.value })} className="w-full text-xs border border-purple-500/30 rounded p-1 bg-slate-800/90 text-slate-200 focus:ring-2 focus:ring-purple-500 outline-none">
+                                                                <option value="linear">Linear</option>
+                                                                <option value="ease">Ease</option>
+                                                                <option value="ease-in">Ease In</option>
+                                                                <option value="ease-out">Ease Out</option>
+                                                                <option value="ease-in-out">Ease In-Out</option>
+                                                            </select>
+                                                        </div>
                                                     </div>
-                                                    {anim.type === 'move' && <div className="mt-2 text-[10px] text-green-600 bg-green-50 p-1 rounded">Drag green target #{idx+1} on canvas</div>}
+                                                    {anim.type === 'move' && <div className="mt-2 text-[10px] text-green-400 bg-green-500/10 p-1 rounded border border-green-500/20">Drag green target #{idx+1} on canvas</div>}
+                                                    {anim.type === 'morph' && <div className="mt-2 text-[10px] text-cyan-400 bg-cyan-500/10 p-1 rounded border border-cyan-500/20">Shape will scale and rotate smoothly</div>}
+                                                    {anim.type === 'draw' && <div className="mt-2 text-[10px] text-purple-400 bg-purple-500/10 p-1 rounded border border-purple-500/20">Path strokes will animate drawing</div>}
+                                                    {anim.type === 'color' && (
+                                                        <div className="mt-2">
+                                                            {selectedEl.fillType === 'gradient' ? (
+                                                                <div className="space-y-2">
+                                                                    <label className="text-[10px] text-slate-400">Gradient Shift</label>
+                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                        <div>
+                                                                            <label className="text-[9px] text-slate-400">Hue Rotate (°)</label>
+                                                                            <input type="number" value={anim.hueRotate || 180} onChange={(e) => updateAnimation(selectedEl.id, idx, { hueRotate: +e.target.value })} className="w-full text-xs border border-purple-500/30 rounded p-1 bg-slate-700/50 text-slate-200"/>
+                                                                        </div>
+                                                                        <div>
+                                                                            <label className="text-[9px] text-slate-400">Saturate</label>
+                                                                            <input type="number" step="0.1" value={anim.saturate || 1.5} onChange={(e) => updateAnimation(selectedEl.id, idx, { saturate: +e.target.value })} className="w-full text-xs border border-purple-500/30 rounded p-1 bg-slate-700/50 text-slate-200"/>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-[9px] text-cyan-400 bg-cyan-500/10 p-1 rounded border border-cyan-500/20">Gradient colors will shift dynamically</div>
+                                                                </div>
+                                                            ) : (
+                                                                <div>
+                                                                    <label className="text-[10px] text-slate-400">Target Color</label>
+                                                                    <div className="flex gap-2">
+                                                                        <input type="color" value={anim.targetColor || '#000000'} onChange={(e) => updateAnimation(selectedEl.id, idx, { targetColor: e.target.value })} className="w-8 h-8 rounded cursor-pointer border border-purple-500/30"/>
+                                                                        <input type="text" value={anim.targetColor || '#000000'} onChange={(e) => updateAnimation(selectedEl.id, idx, { targetColor: e.target.value })} className="flex-1 text-xs border border-purple-500/30 rounded p-1 bg-slate-700/50 text-slate-200"/>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {anim.type === 'textSize' && (
+                                                        <div className="mt-2">
+                                                            <label className="text-[10px] text-slate-400">Target Size (px)</label>
+                                                            <input type="number" value={anim.targetSize || 20} onChange={(e) => updateAnimation(selectedEl.id, idx, { targetSize: +e.target.value })} className="w-full text-xs border border-purple-500/30 rounded p-1 bg-slate-700/50 text-slate-200"/>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>
@@ -672,24 +2049,24 @@
                                 </div>
                             ) : activeTab === 'timeline' ? (
                                 <div className="p-4">
-                                    <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4 mb-4 text-center">
-                                        <Wand2 size={24} className="mx-auto text-indigo-500 mb-2"/>
-                                        <h3 className="font-bold text-indigo-900 text-sm mb-1">Auto-Sequencer</h3>
-                                        <p className="text-xs text-indigo-700 mb-3">Instantly arrange all animations to play one after another.</p>
-                                        <button onClick={autoSequenceAnimations} className="bg-indigo-600 text-white text-xs font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 w-full transition-colors">Apply Sequence</button>
+                                    <div className="bg-gradient-to-br from-purple-600/20 to-pink-600/20 border border-purple-500/30 rounded-lg p-4 mb-4 text-center">
+                                        <Wand2 size={24} className="mx-auto text-purple-400 mb-2"/>
+                                        <h3 className="font-bold text-purple-300 text-sm mb-1">Auto-Sequencer</h3>
+                                        <p className="text-xs text-purple-200/70 mb-3">Instantly arrange all animations to play one after another.</p>
+                                        <button onClick={autoSequenceAnimations} className="bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-bold py-2 px-4 rounded-lg hover:from-purple-700 hover:to-pink-700 w-full transition-all shadow-lg shadow-purple-500/30">Apply Sequence</button>
                                     </div>
-                                    <h3 className="text-xs font-bold text-slate-900 mb-3 flex items-center gap-2"><Clock size={12}/> Global Timeline</h3>
+                                    <h3 className="text-xs font-bold text-purple-300 mb-3 flex items-center gap-2"><Clock size={12}/> Global Timeline</h3>
                                     <div className="space-y-2 relative">
-                                        <div className="absolute left-3 top-0 bottom-0 w-px bg-slate-200 z-0"></div>
-                                        {elements.flatMap(el => el.animations.map((anim, idx) => ({ el, anim, idx }))).sort((a, b) => a.anim.delay - b.anim.delay).map(({ el, anim, idx }, i) => (
-                                            <div key={`${el.id}-${idx}`} className="relative z-10 bg-white border border-slate-200 rounded-lg p-3 shadow-sm ml-6 hover:border-indigo-300 transition-colors" onClick={() => { setSelection(el.id); setActiveTab('properties'); }}>
-                                                <div className="absolute -left-8 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-slate-300 border-2 border-white"></div>
+                                        <div className="absolute left-3 top-0 bottom-0 w-px bg-purple-500/30 z-0"></div>
+                                        {elements.flatMap(el => (el.animations || []).map((anim, idx) => ({ el, anim, idx }))).sort((a, b) => a.anim.delay - b.anim.delay).map(({ el, anim, idx }, i) => (
+                                            <div key={`${el.id}-${idx}`} className="relative z-10 bg-gradient-to-r from-slate-700/50 to-slate-600/50 border border-purple-500/20 rounded-lg p-3 shadow-sm ml-6 hover:border-purple-400/50 transition-all cursor-pointer" onClick={() => { setSelection(el.id); setActiveTab('properties'); }}>
+                                                <div className="absolute -left-8 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 border-2 border-slate-800"></div>
                                                 <div className="flex justify-between items-center mb-1">
-                                                    <span className="text-xs font-bold text-slate-700 truncate max-w-[120px]">{el.type === 'text' ? (el.text.slice(0,10) || 'Text') : el.type}</span>
+                                                    <span className="text-xs font-bold text-slate-200 truncate max-w-[120px]">{el.type === 'text' ? (el.text.slice(0,10) || 'Text') : el.type}</span>
                                                     <span className="text-[10px] font-mono text-slate-400">@ {anim.delay}s</span>
                                                 </div>
-                                                <div className="flex items-center gap-2 text-xs text-indigo-600">
-                                                    {anim.type === 'move' ? <Move size={12}/> : <Play size={12}/>}
+                                                <div className="flex items-center gap-2 text-xs text-purple-300">
+                                                    {anim.type === 'move' ? <Move size={12}/> : anim.type === 'morph' ? <Sparkles size={12}/> : <Play size={12}/>}
                                                     <span className="capitalize">{anim.type}</span>
                                                     <span className="text-slate-400">({anim.duration}s)</span>
                                                 </div>
@@ -697,11 +2074,21 @@
                                         ))}
                                     </div>
                                 </div>
+                            ) : activeTab === 'svg' ? (
+                                <div className="p-4 space-y-4">
+                                    <div>
+                                        <h3 className="text-xs font-bold text-purple-300 mb-2 flex items-center gap-2"><Code size={12}/> SVG Source</h3>
+                                        <textarea value={selectedEl.svgData || ''} readOnly className="w-full h-40 text-xs border border-purple-500/30 rounded-lg p-2 bg-slate-700/50 text-slate-300 font-mono resize-none custom-scrollbar" />
+                                    </div>
+                                    {selectedEl.type === 'svg-group' && (
+                                        <button onClick={() => { setSvgEditorContent(selectedEl.svgData || ''); setShowSVGEditor(true); }} className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-bold py-2 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all">Edit SVG Elements</button>
+                                    )}
+                                </div>
                             ) : (
                                 <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center">
-                                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4"><MousePointer2 size={32} className="opacity-20"/></div>
-                                    <h3 className="font-semibold text-slate-600">No Selection</h3>
-                                    <p className="text-sm mt-1">Select an object to edit properties.</p>
+                                    <div className="w-20 h-20 bg-slate-700/50 rounded-full flex items-center justify-center mb-4"><MousePointer2 size={32} className="opacity-20"/></div>
+                                    <h3 className="font-semibold text-slate-300">No Selection</h3>
+                                    <p className="text-sm mt-1 text-slate-500">Select an object to edit.</p>
                                 </div>
                             )}
                         </div>
