@@ -1,0 +1,637 @@
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { 
+  Upload, Scissors, X, Download, RefreshCcw, 
+  Grid3x3, Square, LayoutTemplate, Sun, Moon, Hash, Monitor,
+  ZoomIn, ZoomOut, Eye, EyeOff, Move, MoveHorizontal
+} from 'lucide-react';
+
+const App = () => {
+  const [svgContent, setSvgContent] = useState(null);
+  const [fileName, setFileName] = useState('');
+
+  const handleFileUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (file && file.type === 'image/svg+xml') {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setSvgContent(e.target.result);
+        setFileName(file.name.replace('.svg', ''));
+      };
+      reader.readAsText(file);
+    } else {
+      alert("Please upload a valid SVG file.");
+    }
+  };
+
+  const handleReset = () => {
+    setSvgContent(null);
+    setFileName('');
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-200 font-sans selection:bg-indigo-500 selection:text-white flex flex-col">
+      <header className="flex justify-between items-center px-6 py-4 border-b border-slate-700 bg-slate-900/50 backdrop-blur-md z-10">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-500/20">
+            <Scissors className="w-6 h-6 text-white" />
+          </div>
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+            Vector Studio
+          </h1>
+        </div>
+        {svgContent && (
+          <button 
+            onClick={handleReset}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-slate-800"
+          >
+            <X className="w-4 h-4" /> Close File
+          </button>
+        )}
+      </header>
+
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {!svgContent ? (
+          <div className="flex-1 flex items-center justify-center p-6">
+            <div className="w-full max-w-2xl border-2 border-dashed border-slate-700 rounded-2xl bg-slate-800/30 hover:bg-slate-800/50 hover:border-indigo-500/50 transition-all duration-300 group cursor-pointer relative h-96 flex flex-col items-center justify-center">
+              <input 
+                type="file" 
+                accept=".svg" 
+                onChange={handleFileUpload} 
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
+              />
+              <div className="w-20 h-20 bg-slate-700/50 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-slate-700 transition-all duration-300">
+                <Upload className="w-10 h-10 text-indigo-400" />
+              </div>
+              <h3 className="text-xl font-semibold text-white mb-2">Upload SVG File</h3>
+              <p className="text-slate-400 max-w-sm text-center px-4">
+                Drag and drop or click to select a vector file. We'll extract the paths so you can crop or stretch precisely.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <Editor svgContent={svgContent} fileName={fileName} />
+        )}
+      </main>
+    </div>
+  );
+};
+
+const Editor = ({ svgContent, fileName }) => {
+  const containerRef = useRef(null);
+  
+  // 'crop' or 'stretch'
+  const [mode, setMode] = useState('crop');
+
+  // --- Common State ---
+  const [svgData, setSvgData] = useState({ viewBox: { x: 0, y: 0, w: 100, h: 100 }, element: null });
+  const [bgMode, setBgMode] = useState('grid');
+  const [zoom, setZoom] = useState(1.0);
+  
+  // --- Crop Mode State ---
+  const [crop, setCrop] = useState({ x: 10, y: 10, width: 80, height: 80 }); 
+  const [showGrid, setShowGrid] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState(null);
+
+  // --- Stretch Mode State ---
+  // Slices are percentages relative to the CROPPED area, not original
+  const [slices, setSlices] = useState({ 
+    x: { start: 33, end: 66 }, 
+    y: { start: 33, end: 66 } 
+  });
+  
+  // Stretch Factors (1.0 = 100%)
+  const [stretchConfig, setStretchConfig] = useState({ x: 1.5, y: 1.0 });
+  
+  // Dragging Logic
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragState, setDragState] = useState(null); 
+
+  // Parse SVG
+  useEffect(() => {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgContent, "image/svg+xml");
+      const svg = doc.querySelector("svg");
+      
+      if (svg) {
+        const viewBoxAttr = svg.getAttribute("viewBox");
+        const widthAttr = svg.getAttribute("width");
+        const heightAttr = svg.getAttribute("height");
+        
+        let vb = { x: 0, y: 0, w: 100, h: 100 };
+
+        if (viewBoxAttr) {
+          const parts = viewBoxAttr.split(/[\s,]+/).filter(v => v !== '').map(parseFloat);
+          if (parts.length === 4) vb = { x: parts[0], y: parts[1], w: parts[2], h: parts[3] };
+        } else if (widthAttr && heightAttr) {
+          vb = { x: 0, y: 0, w: parseFloat(widthAttr) || 100, h: parseFloat(heightAttr) || 100 };
+        }
+
+        // Clean SVG for display
+        svg.setAttribute('width', '100%');
+        svg.setAttribute('height', '100%');
+        svg.setAttribute('preserveAspectRatio', 'none');
+        svg.style.display = 'block';
+        if (!viewBoxAttr) svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+
+        setSvgData({ viewBox: vb, element: svg.outerHTML });
+      }
+    } catch (e) {
+      console.error("Error parsing SVG", e);
+    }
+  }, [svgContent]);
+
+
+  // --- INTERACTION HANDLERS ---
+
+  const handleMouseDown = (e, type, handle) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const clientX = e.clientX || e.touches?.[0]?.clientX;
+    const clientY = e.clientY || e.touches?.[0]?.clientY;
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+
+    setIsDragging(true);
+    setDragState({
+      type,
+      handle,
+      startX: clientX,
+      startY: clientY,
+      initialCrop: { ...crop },
+      initialSlices: JSON.parse(JSON.stringify(slices)),
+      initialStretch: { ...stretchConfig },
+      rect
+    });
+  };
+
+  const handleMouseMove = useCallback((e) => {
+    if (!isDragging || !dragState) return;
+
+    const clientX = e.clientX || e.touches?.[0]?.clientX;
+    const clientY = e.clientY || e.touches?.[0]?.clientY;
+    
+    // Delta as percentage of the CURRENT container visual size
+    const dxPct = ((clientX - dragState.startX) / dragState.rect.width) * 100;
+    const dyPct = ((clientY - dragState.startY) / dragState.rect.height) * 100;
+
+    if (dragState.type === 'crop') {
+      let newCrop = { ...dragState.initialCrop };
+      const minSize = 2;
+
+      if (dragState.handle === 'move') {
+        newCrop.x = Math.max(0, Math.min(100 - newCrop.width, newCrop.x + dxPct));
+        newCrop.y = Math.max(0, Math.min(100 - newCrop.height, newCrop.y + dyPct));
+      } else {
+        const h = dragState.handle;
+        if (h.includes('e')) newCrop.width = Math.max(minSize, Math.min(100 - newCrop.x, newCrop.width + dxPct));
+        if (h.includes('s')) newCrop.height = Math.max(minSize, Math.min(100 - newCrop.y, newCrop.height + dyPct));
+        if (h.includes('w')) {
+          const change = Math.max(-newCrop.x, Math.min(newCrop.x + newCrop.width - minSize, dxPct));
+          newCrop.x += change;
+          newCrop.width -= change;
+        }
+        if (h.includes('n')) {
+          const change = Math.max(-newCrop.y, Math.min(newCrop.y + newCrop.height - minSize, dyPct));
+          newCrop.y += change;
+          newCrop.height -= change;
+        }
+
+        if (aspectRatio && h.length === 2) {
+           const vbRatio = svgData.viewBox.w / svgData.viewBox.h;
+           const visualRatio = aspectRatio / vbRatio;
+           newCrop.height = newCrop.width / visualRatio;
+        }
+      }
+      setCrop(newCrop);
+
+    } else if (dragState.type === 'slice') {
+      // 9-Slice Line Dragging
+      let newSlices = { ...dragState.initialSlices };
+      const limit = 5; 
+      
+      // Calculate Factor: 
+      // If image is stretched 2x, moving 10% visually on screen is only 5% of the source image.
+      const factorX = dragState.initialStretch.x || 1;
+      const factorY = dragState.initialStretch.y || 1;
+
+      if (dragState.handle === 'y-start') {
+        newSlices.y.start = Math.max(0, Math.min(newSlices.y.end - limit, newSlices.y.start + (dyPct * factorY)));
+      } else if (dragState.handle === 'y-end') {
+        newSlices.y.end = Math.max(newSlices.y.start + limit, Math.min(100, newSlices.y.end + (dyPct * factorY)));
+      }
+      
+      if (dragState.handle === 'x-start') {
+        newSlices.x.start = Math.max(0, Math.min(newSlices.x.end - limit, newSlices.x.start + (dxPct * factorX)));
+      } else if (dragState.handle === 'x-end') {
+        newSlices.x.end = Math.max(newSlices.x.start + limit, Math.min(100, newSlices.x.end + (dxPct * factorX)));
+      }
+
+      setSlices(newSlices);
+    } else if (dragState.type === 'resize') {
+       // Direct Stretch Dragging
+       let newStretch = { ...dragState.initialStretch };
+       const h = dragState.handle;
+
+       // Simplified: NewFactor = OldFactor * (1 + dxPct/100)
+       const scaleX = (1 + dxPct/100);
+       const scaleY = (1 + dyPct/100);
+
+       if (h.includes('e')) newStretch.x = Math.max(0.5, newStretch.x * scaleX);
+       if (h.includes('s')) newStretch.y = Math.max(0.5, newStretch.y * scaleY);
+       
+       setStretchConfig(newStretch);
+    }
+
+  }, [isDragging, dragState, aspectRatio, svgData]);
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+    setDragState(null);
+  };
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('touchmove', handleMouseMove);
+      window.addEventListener('touchend', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleMouseMove);
+      window.removeEventListener('touchend', handleMouseUp);
+    };
+  }, [isDragging, handleMouseMove]);
+
+
+  // --- GENERATION LOGIC ---
+
+  const generateCropSVG = () => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgContent, "image/svg+xml");
+    const svg = doc.querySelector("svg");
+    
+    const x = (svgData.viewBox.x + (crop.x / 100) * svgData.viewBox.w);
+    const y = (svgData.viewBox.y + (crop.y / 100) * svgData.viewBox.h);
+    const w = ((crop.width / 100) * svgData.viewBox.w);
+    const h = ((crop.height / 100) * svgData.viewBox.h);
+
+    svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
+    svg.setAttribute('width', `${w}`);
+    svg.setAttribute('height', `${h}`);
+    svg.style.width = '';
+    svg.style.height = '';
+
+    return new XMLSerializer().serializeToString(svg);
+  };
+
+  const generateNineSliceSVG = () => {
+    const sourceX = svgData.viewBox.x + (crop.x / 100) * svgData.viewBox.w;
+    const sourceY = svgData.viewBox.y + (crop.y / 100) * svgData.viewBox.h;
+    const sourceW = (crop.width / 100) * svgData.viewBox.w;
+    const sourceH = (crop.height / 100) * svgData.viewBox.h;
+    
+    const x1 = (slices.x.start / 100) * sourceW;
+    const x2 = (slices.x.end / 100) * sourceW;
+    const y1 = (slices.y.start / 100) * sourceH;
+    const y2 = (slices.y.end / 100) * sourceH;
+
+    const targetW = sourceW * stretchConfig.x;
+    const targetH = sourceH * stretchConfig.y;
+
+    const wL = x1;
+    const wM = x2 - x1;
+    const wR = sourceW - x2;
+    const hT = y1;
+    const hM = y2 - y1;
+    const hB = sourceH - y2;
+
+    const target_wM = targetW - wL - wR;
+    const target_hM = targetH - hT - hB;
+
+    const innerContent = svgData.element.replace(/^<svg[^>]*>|<\/svg>$/g, '');
+    
+    let parts = '';
+
+    // Row 1: Top
+    parts += `<svg x="0" y="0" width="${wL}" height="${hT}" viewBox="${sourceX} ${sourceY} ${wL} ${hT}" preserveAspectRatio="none">${innerContent}</svg>`;
+    parts += `<svg x="${wL}" y="0" width="${target_wM}" height="${hT}" viewBox="${sourceX + x1} ${sourceY} ${wM} ${hT}" preserveAspectRatio="none">${innerContent}</svg>`;
+    parts += `<svg x="${targetW - wR}" y="0" width="${wR}" height="${hT}" viewBox="${sourceX + x2} ${sourceY} ${wR} ${hT}" preserveAspectRatio="none">${innerContent}</svg>`;
+
+    // Row 2: Middle
+    parts += `<svg x="0" y="${hT}" width="${wL}" height="${target_hM}" viewBox="${sourceX} ${sourceY + y1} ${wL} ${hM}" preserveAspectRatio="none">${innerContent}</svg>`;
+    parts += `<svg x="${wL}" y="${hT}" width="${target_wM}" height="${target_hM}" viewBox="${sourceX + x1} ${sourceY + y1} ${wM} ${hM}" preserveAspectRatio="none">${innerContent}</svg>`;
+    parts += `<svg x="${targetW - wR}" y="${hT}" width="${wR}" height="${target_hM}" viewBox="${sourceX + x2} ${sourceY + y1} ${wR} ${hM}" preserveAspectRatio="none">${innerContent}</svg>`;
+
+    // Row 3: Bottom
+    parts += `<svg x="0" y="${targetH - hB}" width="${wL}" height="${hB}" viewBox="${sourceX} ${sourceY + y2} ${wL} ${hB}" preserveAspectRatio="none">${innerContent}</svg>`;
+    parts += `<svg x="${wL}" y="${targetH - hB}" width="${target_wM}" height="${hB}" viewBox="${sourceX + x1} ${sourceY + y2} ${wM} ${hB}" preserveAspectRatio="none">${innerContent}</svg>`;
+    parts += `<svg x="${targetW - wR}" y="${targetH - hB}" width="${wR}" height="${hB}" viewBox="${sourceX + x2} ${sourceY + y2} ${wR} ${hB}" preserveAspectRatio="none">${innerContent}</svg>`;
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${targetW}" height="${targetH}" viewBox="0 0 ${targetW} ${targetH}">${parts}</svg>`;
+  };
+
+  const handleDownload = () => {
+    const content = mode === 'crop' ? generateCropSVG() : generateNineSliceSVG();
+    const blob = new Blob([content], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${fileName}-${mode === 'crop' ? 'cropped' : 'smart-resize'}.svg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const StretchPreview = () => {
+    const svgString = generateNineSliceSVG();
+    return (
+      <div 
+         className="w-full h-full pointer-events-none [&>svg]:w-full [&>svg]:h-full"
+         dangerouslySetInnerHTML={{ __html: svgString }}
+      />
+    );
+  };
+
+  // Zoom Controls
+  const handleZoom = (delta) => {
+    setZoom(z => Math.max(0.5, Math.min(3.0, z + delta)));
+  };
+
+  // Calculate dynamic aspect ratio for the container
+  let containerAspectRatio;
+  if (mode === 'crop') {
+     containerAspectRatio = `${svgData.viewBox.w} / ${svgData.viewBox.h}`;
+  } else {
+     const croppedW = (crop.width / 100) * svgData.viewBox.w;
+     const croppedH = (crop.height / 100) * svgData.viewBox.h;
+     const finalW = croppedW * stretchConfig.x;
+     const finalH = croppedH * stretchConfig.y;
+     
+     containerAspectRatio = `${finalW} / ${finalH}`;
+  }
+
+  return (
+    <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
+      
+      {/* --- CANVAS AREA --- */}
+      <div className="flex-1 bg-slate-800/50 relative overflow-hidden flex flex-col">
+        
+        {/* Canvas Toolbar */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur border border-slate-700 p-1.5 rounded-full flex items-center gap-1 z-30 shadow-xl">
+           <button onClick={() => setBgMode('grid')} className={`p-2 rounded-full transition ${bgMode === 'grid' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-700'}`}><Hash className="w-4 h-4" /></button>
+           <button onClick={() => setBgMode('dark')} className={`p-2 rounded-full transition ${bgMode === 'dark' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-700'}`}><Moon className="w-4 h-4" /></button>
+           <button onClick={() => setBgMode('light')} className={`p-2 rounded-full transition ${bgMode === 'light' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-700'}`}><Sun className="w-4 h-4" /></button>
+           
+           <div className="w-px h-4 bg-slate-700 mx-1"></div>
+
+           <button onClick={() => handleZoom(-0.25)} className="p-2 rounded-full text-slate-400 hover:bg-slate-700 hover:text-white transition"><ZoomOut className="w-4 h-4" /></button>
+           <span className="text-[10px] font-mono text-slate-400 min-w-[32px] text-center">{Math.round(zoom * 100)}%</span>
+           <button onClick={() => handleZoom(0.25)} className="p-2 rounded-full text-slate-400 hover:bg-slate-700 hover:text-white transition"><ZoomIn className="w-4 h-4" /></button>
+           
+           <div className="w-px h-4 bg-slate-700 mx-1"></div>
+           
+           <button onClick={() => setMode('crop')} className={`px-3 py-1.5 text-xs font-bold rounded-full transition ${mode === 'crop' ? 'bg-indigo-500 text-white' : 'text-slate-400 hover:bg-slate-700'}`}>Crop</button>
+           <button onClick={() => setMode('stretch')} className={`px-3 py-1.5 text-xs font-bold rounded-full transition ${mode === 'stretch' ? 'bg-indigo-500 text-white' : 'text-slate-400 hover:bg-slate-700'}`}>Smart Resize</button>
+        </div>
+
+        {/* Background */}
+        <div className="absolute inset-0 z-0 pointer-events-none transition-colors duration-300"
+             style={{
+               backgroundColor: bgMode === 'light' ? '#f1f5f9' : bgMode === 'dark' ? '#0f172a' : '#334155',
+               backgroundImage: bgMode === 'grid' 
+                 ? `linear-gradient(to right, rgba(255,255,255,0.1) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(255,255,255,0.1) 1px, transparent 1px)`
+                 : 'none',
+               backgroundSize: '24px 24px',
+             }}
+        />
+
+        {/* Scrollable Container for Zoom */}
+        <div className="flex-1 overflow-auto flex items-center justify-center p-8">
+            <div 
+              ref={containerRef}
+              className="relative shadow-2xl shadow-black/50 transition-all duration-200"
+              style={{
+                width: '100%', // FORCE WIDTH TO FILL PARENT (Within max constraints)
+                maxHeight: `${75 * zoom}vh`,
+                maxWidth: `${90 * zoom}%`,
+                aspectRatio: containerAspectRatio
+              }}
+            >
+              
+              {/* --- CONTENT LAYERS --- */}
+              
+              {mode === 'stretch' ? (
+                /* STRETCH MODE */
+                <>
+                  <StretchPreview />
+
+                  {/* 1. OUTER RESIZE HANDLES (Blue) */}
+                  <div className="absolute inset-0 z-10 pointer-events-none">
+                     <div className="absolute inset-0 border-2 border-indigo-400/50"></div>
+                     <div className="absolute inset-0 pointer-events-auto">
+                        {[
+                          { pos: 'e', cursor: 'ew-resize', class: '-right-2 top-1/2 -translate-y-1/2 h-8 w-2' },
+                          { pos: 's', cursor: 'ns-resize', class: '-bottom-2 left-1/2 -translate-x-1/2 w-8 h-2' },
+                          { pos: 'se', cursor: 'nwse-resize', class: '-bottom-2 -right-2 w-4 h-4 rounded-full' }
+                        ].map(h => (
+                           <div 
+                             key={h.pos}
+                             className={`absolute bg-indigo-500 border border-white shadow-sm hover:scale-110 transition-transform ${h.class}`}
+                             style={{ cursor: h.cursor }}
+                             onMouseDown={(e) => handleMouseDown(e, 'resize', h.pos)}
+                             onTouchStart={(e) => handleMouseDown(e, 'resize', h.pos)}
+                           />
+                        ))}
+                     </div>
+                  </div>
+
+                  {/* 2. INNER SLICE GUIDES (Pink) */}
+                  <div className="absolute inset-0 z-20 pointer-events-none">
+                        {(() => {
+                           const lineStyle = "absolute bg-rose-500 shadow-sm shadow-black/50 pointer-events-auto hover:bg-rose-400 transition-colors flex items-center justify-center group";
+                           const handleStyle = "w-5 h-5 bg-rose-500 rounded-full flex items-center justify-center text-white shadow-md scale-0 group-hover:scale-100 transition-transform";
+                           
+                           const vY1 = slices.y.start / stretchConfig.y;
+                           const vY2 = 100 - ((100 - slices.y.end) / stretchConfig.y);
+                           const vX1 = slices.x.start / stretchConfig.x;
+                           const vX2 = 100 - ((100 - slices.x.end) / stretchConfig.x);
+
+                           return (
+                             <>
+                               {/* Y Lines */}
+                               <div className={`${lineStyle} w-full h-0.5 cursor-row-resize`} style={{ top: `${vY1}%`, left: 0 }} onMouseDown={(e) => handleMouseDown(e, 'slice', 'y-start')}>
+                                  <div className={handleStyle}><Grid3x3 className="w-3 h-3"/></div>
+                                  <span className="absolute left-2 -top-5 text-[10px] font-bold text-rose-400 opacity-0 group-hover:opacity-100 bg-slate-900/80 px-1 rounded">Top Cap</span>
+                               </div>
+                               <div className={`${lineStyle} w-full h-0.5 cursor-row-resize`} style={{ top: `${vY2}%`, left: 0 }} onMouseDown={(e) => handleMouseDown(e, 'slice', 'y-end')}>
+                                  <div className={handleStyle}><Grid3x3 className="w-3 h-3"/></div>
+                                  <span className="absolute left-2 bottom-2 text-[10px] font-bold text-rose-400 opacity-0 group-hover:opacity-100 bg-slate-900/80 px-1 rounded">Bottom Cap</span>
+                               </div>
+
+                               {/* X Lines */}
+                               <div className={`${lineStyle} h-full w-0.5 cursor-col-resize`} style={{ left: `${vX1}%`, top: 0 }} onMouseDown={(e) => handleMouseDown(e, 'slice', 'x-start')}>
+                                  <div className={handleStyle}><Grid3x3 className="w-3 h-3"/></div>
+                                  <span className="absolute top-2 -left-12 text-[10px] font-bold text-rose-400 opacity-0 group-hover:opacity-100 bg-slate-900/80 px-1 rounded">Left Cap</span>
+                               </div>
+                               <div className={`${lineStyle} h-full w-0.5 cursor-col-resize`} style={{ left: `${vX2}%`, top: 0 }} onMouseDown={(e) => handleMouseDown(e, 'slice', 'x-end')}>
+                                  <div className={handleStyle}><Grid3x3 className="w-3 h-3"/></div>
+                                  <span className="absolute top-2 left-3 text-[10px] font-bold text-rose-400 opacity-0 group-hover:opacity-100 bg-slate-900/80 px-1 rounded">Right Cap</span>
+                               </div>
+
+                               {/* Center Zone */}
+                               <div className="absolute border-2 border-dashed border-rose-500/30 pointer-events-none transition-opacity duration-300"
+                                 style={{
+                                   left: `${slices.x.start / stretchConfig.x}%`, 
+                                   width: `${(slices.x.end - slices.x.start) / stretchConfig.x}%`,
+                                   top: `${slices.y.start / stretchConfig.y}%`, 
+                                   height: `${(slices.y.end - slices.y.start) / stretchConfig.y}%`,
+                                   opacity: isDragging ? 1 : 0.4
+                                 }}
+                               />
+                             </>
+                           );
+                        })()}
+                  </div>
+                </>
+              ) : (
+                /* CROP MODE */
+                <>
+                  <div 
+                    className="w-full h-full pointer-events-none [&>svg]:w-full [&>svg]:h-full"
+                    dangerouslySetInnerHTML={{ __html: svgData.element }}
+                  />
+                  <div className="absolute inset-0 bg-slate-900/60 pointer-events-none">
+                    <div style={{ position: 'absolute', left: `${crop.x}%`, top: `${crop.y}%`, width: `${crop.width}%`, height: `${crop.height}%`, boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.6)' }} />
+                  </div>
+                  <div 
+                    className="absolute z-10 group"
+                    style={{ left: `${crop.x}%`, top: `${crop.y}%`, width: `${crop.width}%`, height: `${crop.height}%`, cursor: 'move' }}
+                    onMouseDown={(e) => handleMouseDown(e, 'crop', 'move')}
+                    onTouchStart={(e) => handleMouseDown(e, 'crop', 'move')}
+                  >
+                    <div className="absolute inset-0 border-2 border-indigo-400 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"></div>
+                    <div className={`absolute inset-0 transition-opacity pointer-events-none ${showGrid || isDragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'}`}>
+                       <div className="absolute left-1/3 top-0 bottom-0 w-px bg-indigo-400/50"></div>
+                       <div className="absolute right-1/3 top-0 bottom-0 w-px bg-indigo-400/50"></div>
+                       <div className="absolute top-1/3 left-0 right-0 h-px bg-indigo-400/50"></div>
+                       <div className="absolute bottom-1/3 left-0 right-0 h-px bg-indigo-400/50"></div>
+                    </div>
+                     {[
+                      { pos: 'nw', cursor: 'nw-resize', class: '-top-1.5 -left-1.5' },
+                      { pos: 'ne', cursor: 'ne-resize', class: '-top-1.5 -right-1.5' },
+                      { pos: 'sw', cursor: 'sw-resize', class: '-bottom-1.5 -left-1.5' },
+                      { pos: 'se', cursor: 'se-resize', class: '-bottom-1.5 -right-1.5' },
+                      { pos: 'n', cursor: 'n-resize', class: '-top-1.5 left-1/2 -translate-x-1/2' },
+                      { pos: 's', cursor: 's-resize', class: '-bottom-1.5 left-1/2 -translate-x-1/2' },
+                      { pos: 'e', cursor: 'e-resize', class: '-right-1.5 top-1/2 -translate-y-1/2' },
+                      { pos: 'w', cursor: 'w-resize', class: '-left-1.5 top-1/2 -translate-y-1/2' },
+                    ].filter(h => !aspectRatio || h.pos.length === 2).map((h) => (
+                      <div key={h.pos} className={`absolute w-3 h-3 bg-indigo-500 border border-white rounded-full z-20 ${h.class}`} style={{ cursor: h.cursor }} onMouseDown={(e) => handleMouseDown(e, 'crop', h.pos)} onTouchStart={(e) => handleMouseDown(e, 'crop', h.pos)} />
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+        </div>
+      </div>
+
+      {/* --- SIDEBAR --- */}
+      <div className="w-full md:w-80 bg-slate-900 border-t md:border-t-0 md:border-l border-slate-700 flex flex-col z-20 shadow-xl overflow-y-auto">
+        <div className="p-6 space-y-8">
+          
+          {mode === 'crop' ? (
+            /* --- CROP CONTROLS --- */
+            <>
+              <div>
+                <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Crop Ratio</h2>
+                <div className="grid grid-cols-4 gap-2 mb-4">
+                  <button onClick={() => setAspectRatio(null)} className={`p-2 rounded-md text-xs font-medium border transition-colors flex flex-col items-center gap-1 ${aspectRatio === null ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                    <LayoutTemplate className="w-4 h-4" /> Free
+                  </button>
+                  <button onClick={() => setAspectRatio(1)} className={`p-2 rounded-md text-xs font-medium border transition-colors flex flex-col items-center gap-1 ${aspectRatio === 1 ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                    <Square className="w-4 h-4" /> 1:1
+                  </button>
+                  <button onClick={() => setAspectRatio(16/9)} className={`p-2 rounded-md text-xs font-medium border transition-colors flex flex-col items-center gap-1 ${aspectRatio === 16/9 ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                    <Monitor className="w-4 h-4" /> 16:9
+                  </button>
+                  <button onClick={() => setAspectRatio(4/3)} className={`p-2 rounded-md text-xs font-medium border transition-colors flex flex-col items-center gap-1 ${aspectRatio === 4/3 ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
+                    <Monitor className="w-4 h-4" /> 4:3
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            /* --- STRETCH CONTROLS --- */
+            <>
+              <div>
+                <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Scale Factors</h2>
+                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-6">
+                   
+                   {/* Horizontal Slider */}
+                   <div className="space-y-2">
+                     <div className="flex justify-between items-center text-sm">
+                        <span className="text-slate-300 flex items-center gap-2"><MoveHorizontal className="w-4 h-4 text-indigo-400" /> Width</span>
+                        <span className="font-mono text-indigo-300 font-bold">{Math.round(stretchConfig.x * 100)}%</span>
+                     </div>
+                     <input 
+                       type="range" min="0.5" max="3.0" step="0.1"
+                       value={stretchConfig.x}
+                       onChange={(e) => setStretchConfig(p => ({ ...p, x: parseFloat(e.target.value) }))}
+                       className="w-full accent-indigo-500 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                     />
+                   </div>
+
+                   {/* Vertical Slider */}
+                   <div className="space-y-2">
+                     <div className="flex justify-between items-center text-sm">
+                        <span className="text-slate-300 flex items-center gap-2"><Move className="w-4 h-4 rotate-90 text-indigo-400" /> Height</span>
+                        <span className="font-mono text-indigo-300 font-bold">{Math.round(stretchConfig.y * 100)}%</span>
+                     </div>
+                     <input 
+                       type="range" min="0.5" max="3.0" step="0.1"
+                       value={stretchConfig.y}
+                       onChange={(e) => setStretchConfig(p => ({ ...p, y: parseFloat(e.target.value) }))}
+                       className="w-full accent-indigo-500 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                     />
+                   </div>
+
+                </div>
+                <p className="text-[11px] text-slate-500 mt-3 leading-tight">
+                  <strong className="text-indigo-400">Drag the Blue Border</strong> to resize the image. 
+                  <br/><br/>
+                  <strong className="text-rose-400">Drag the Pink Lines</strong> to set the protected zones (caps) that won't stretch.
+                </p>
+              </div>
+            </>
+          )}
+          
+          <div className="pt-4 border-t border-slate-700 mt-auto flex flex-col gap-3">
+            {mode === 'crop' && (
+                <button
+                onClick={() => setCrop({ x: 0, y: 0, width: 100, height: 100 })}
+                className="w-full py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                >
+                <RefreshCcw className="w-4 h-4" /> Reset Crop
+                </button>
+            )}
+            
+            <button
+              onClick={handleDownload}
+              className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-lg shadow-indigo-600/20 transition-all hover:translate-y-[-1px] flex items-center justify-center gap-2"
+            >
+              <Download className="w-5 h-5" /> {mode === 'crop' ? 'Export Crop' : 'Export Resized'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default App;
